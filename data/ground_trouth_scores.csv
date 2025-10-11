@@ -1,0 +1,7 @@
+paper_file,pillar_name,expected_score,expected_feedback_keywords
+sample_paper_1.txt,check_structure,0.8,structure,completeness
+sample_paper_1.txt,check_linguistics,0.7,linguistic,quality
+sample_paper_1.txt,check_cohesion,0.75,coherence,cohesion
+sample_paper_1.txt,check_reproducibility,0.6,reproducibility,methodology
+sample_paper_1.txt,check_references,0.85,references,citations
+sample_paper_1.txt,check_quality,0.8,quality,scientific
