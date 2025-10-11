@@ -13,7 +13,7 @@ In the era of rapid growth in scientific literature, verifying the **quality**, 
 
 pAIper Check offers two main usage modes ('settings')—Researcher and Reviewer—and focuses on the following pillars:
 
-## 1. Scientific Rigor and Ethics (Veracity)
+### 1. Scientific Rigor and Ethics (Veracity)
 Hype Filter: Detects exaggerated language and bias in titles and conclusions, cross-checking them against the robustness of the results.
 
 Ethics Verification: Searches for ethics committee approval and the use of informed consent.
@@ -22,14 +22,14 @@ Premise Identification: Ensures direct alignment between the initial hypothesis 
 
 Critical Citations: Verifies that key claims are supported by current or foundational references.
 
-## 2. Cohesion and Reproducibility
+### 2. Cohesion and Reproducibility
 Reproducibility Score: Evaluates methodological clarity and the availability of datasets, code, or materials for replicability.
 
 Figure-Text Alignment: Validates visual references and Figure Caption Quality (must be self-explanatory).
 
 Linguistic Control: Checks consistency of technical terminology and argumentative fluency.
 
-## 3. Advanced Output and Feedback (AI-Powered)
+### 3. Advanced Output and Feedback (AI-Powered)
 Dynamic Spider Chart: Provides a clear, immediate visualization of quality scores by category.
 
 Author Recommendations: Generates constructive, specific feedback to improve the manuscript.
