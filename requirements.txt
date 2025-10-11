@@ -4,3 +4,4 @@ openai
 pdfplumber
 nltk
 PyPDF2
+pyyaml

@@ -1,0 +1,23 @@
+# config/default.yaml
+app:
+  debug: false
+  log_level: INFO
+
+llm:
+  model_name: gpt-4
+  temperature: 0.2
+  max_tokens: 2000
+
+database:
+  uri: ""
+  name: "pAIperCheck"
+
+evaluation:
+  weights:
+    structure: 0.15
+    linguistics: 0.15
+    cohesion: 0.15
+    reproducibility: 0.20
+    references: 0.15
+    quality: 0.20
+  min_score_threshold: 0.6

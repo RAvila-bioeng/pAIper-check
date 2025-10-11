@@ -20,12 +20,17 @@ class Reference:
 
 @dataclass
 class Paper:
-    """Main model representing a scientific paper."""
-    title: str
-    abstract: str
-    full_text: str
+    raw_text: str
+    title: str = ""
+    abstract: str = ""
+    full_text: str = ""
     sections: List[Section] = field(default_factory=list)
     references: List[Reference] = field(default_factory=list)
+    
+    def __post_init__(self):
+        """Initialize derived fields from raw_text."""
+        if not self.full_text and self.raw_text:
+            self.full_text = self.raw_text
 
     def get_section_titles(self) -> List[str]:
         return [section.title for section in self.sections]
@@ -33,3 +38,10 @@ class Paper:
     def get_total_length(self) -> int:
         """Returns the total length of the manuscript in characters."""
         return len(self.full_text)
+    
+    def get_section_content(self, section_title: str) -> str:
+        """Get content of a specific section by title."""
+        for section in self.sections:
+            if section.title.lower() == section_title.lower():
+                return section.content
+        return ""
