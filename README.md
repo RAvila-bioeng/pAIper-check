@@ -1,7 +1,7 @@
 # pAIper check
 **Comprehensive Scientific Manuscript Evaluation System**
 
-A tool designed for the multifaceted and automated analysis of the quality, structure, and rigor of academic works. Developed specifically for the **SAM Congress (Semana de Avances en Metodología - Week of Advances in Methodology) at the Universidad Francisco de Vitoria (UFV)**, aiming to optimize the review process and ensure the excellence of the presented papers.
+A tool designed for the multifaceted and automated analysis of the quality, structure, and rigor of academic works. Developed specifically for the **SAM Congress at the Universidad Francisco de Vitoria**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/Python-3.9%2B-blue)]()
