@@ -1,48 +1,64 @@
-# pAIper-check
-AI-powered auditing tool for scientific papers, focused on rigor, reproducibility, and hype detection.
+# pAIper check
+**Comprehensive Scientific Manuscript Evaluation System**
+
+A tool designed for the multifaceted and automated analysis of the quality, structure, and rigor of academic works. Developed specifically for the **SAM Congress (Semana de Avances en Metodología - Week of Advances in Methodology) at the Universidad Francisco de Vitoria (UFV)**, aiming to optimize the review process and ensure the excellence of the presented papers.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/badge/Python-3.11%2B-blue)]()
+[![Python Version](https://img.shields.io/badge/Python-3.9%2B-blue)]()
 
-In the era of rapid growth in scientific literature, verifying the **quality**, **methodological rigor**, and **veracity** of papers has become a bottleneck for editors and reviewers.
+## Context: UFV SAM Congress
 
-**pAIper Check** uses **Large Language Models (LLMs)** and scripting to perform a multidimensional evaluation of manuscripts, assisting reviewers and providing researchers with a tool for critical pre-review.
+The **UFV SAM Congress** is a benchmark for disseminating research. To maintain a high standard of quality, **EvaluaSAM** offers a robust solution that complements human judgment, allowing reviewers to focus on scientific significance while the tool validates the technical, structural, and linguistic aspects of the manuscripts.
 
+## System Proposal
 
-## Key features:
+**EvaluaSAM** implements a set of interconnected modules to provide a comprehensive and objective evaluation. Its modular design facilitates expansion and adaptation to different academic standards.
 
-pAIper Check offers two main usage modes ('settings')—Researcher and Reviewer—and focuses on the following pillars:
+---
+## Evaluation Modules
+The system is organized into six fundamental pillars, each focused on a critical aspect of the quality of a scientific paper:
 
-### 1. Scientific Rigor and Ethics (Veracity)
-Hype Filter: Detects exaggerated language and bias in titles and conclusions, cross-checking them against the robustness of the results.
+### 1. Structure and Completeness Assessment
+This module ensures the manuscript complies with essential formal requirements.
+* **Section Verification:** Checks for the presence of mandatory sections (**Abstract, Methodology, Results, References**).
+* **Format Analysis:** Review of structure and formatting according to academic standards.
+* **Missing Element Detection:** Identification of absent or poorly organized components.
 
-Ethics Verification: Searches for ethics committee approval and the use of informed consent.
+### 2. Linguistic Quality Control
+Focuses on the precision and style of scientific language.
+* **Specialized Correction:** Orthographic and grammatical review tailored for scientific terminology.
+* **Terminology Consistency:** Verification that technical terms are used uniformly throughout the text.
+* **Appropriate Academic Style:** Analysis of the tone and formality required for scientific communication.
 
-Premise Identification: Ensures direct alignment between the initial hypothesis and the conclusions.
+### 3. Coherence and Cohesion Analysis
+Evaluates the flow and logical connection of the argument.
+* **Argumentative Fluency:** Assessment of how ideas are developed throughout the manuscript.
+* **Connectivity:** Analysis of transitions and the logical relationship between paragraphs and sections.
+* **Narrative Consistency:** Ensures a uniform storyline from the introduction to the conclusions.
 
-Critical Citations: Verifies that key claims are supported by current or foundational references.
+### 4. Reproducibility Assessment
+A crucial pillar for modern research, centered on methodological transparency.
+* **Methodological Clarity:** Analysis of the sufficiency of method descriptions to allow replication.
+* **Data Availability:** Verification of mentions regarding accessibility to data and/or code.
+* **Replicability:** Evaluation of the theoretical possibility of reproducing the experiments or analysis.
 
-### 2. Cohesion and Reproducibility
-Reproducibility Score: Evaluates methodological clarity and the availability of datasets, code, or materials for replicability.
+### 5. References and Citation Verification
+Guarantees the work's strength and bibliographical support.
+* **Automated Validation:** Checks the correct notation and format of bibliographic citations.
+* **Existence and Access:** Verification of the accessibility and validity of the cited sources.
+* **Credibility and Relevance:** Analysis of the currency and pertinence of the references used.
 
-Figure-Text Alignment: Validates visual references and Figure Caption Quality (must be self-explanatory).
+### 6. Scientific Quality Evaluation
+The core of the review, focusing on contribution and intrinsic rigor.
+* **Novelty and Originality:** Analysis of the paper's contribution to the existing body of knowledge.
+* **Methodological Rigor:** Evaluation of the suitability of the selected methods for the stated objectives.
+* **Significance of Results:** Validation of the importance and implications of the findings.
 
-Linguistic Control: Checks consistency of technical terminology and argumentative fluency.
+---
+## System Architecture
+The system is designed with a modular approach, facilitating maintenance and the integration of new evaluation criteria.
 
-### 3. Advanced Output and Feedback (AI-Powered)
-Dynamic Spider Chart: Provides a clear, immediate visualization of quality scores by category.
-
-Author Recommendations: Generates constructive, specific feedback to improve the manuscript.
-
-LLM-Generated Text Detection (Experimental): Module that identifies text patterns suggesting automatic generation.
-
-## System architecture:
-The **pAIper Check** workflow is modular and centers on LLM abstraction for easy integration.
-
-Input: The user provides a PDF file (or text) and the desired setting ('--reviewer' or '--researcher').
-
-Preprocessing: Key sections are extracted (Title, Abstract, Conclusion, Methods, etc.).
-
-Modular Analysis: Each section is passed to the corresponding analysis modules (Hype, Ethics, Reproducibility), which interact with the LLM through specific prompts.
-
-Scoring & Output: The results from each module are consolidated to generate the Spider Chart and final Recommendations.
+1.  **Input:** The manuscript is provided (preferably in **PDF** or plain text format).
+2.  **Preprocessing:** Extraction and segmentation of the document's key sections (Title, Abstract, Conclusions, etc.).
+3.  **Modular Analysis:** Each text segment is passed to the corresponding evaluation modules (Structure, Linguistic, References, etc.).
+4.  **Consolidation and Output:** Results from each module are compiled and processed to generate a **Detailed Evaluation Report**, including scores by category and constructive feedback.
