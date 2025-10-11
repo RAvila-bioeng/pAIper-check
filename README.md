@@ -8,7 +8,7 @@ A tool designed for the multifaceted and automated analysis of the quality, stru
 
 ## Context: UFV SAM Congress
 
-This project is a dedicated tool for the **IV San Alberto Magno Congress**, hosted by the Faculty of Experimental Sciences at UFV. This flagship academyc event gathers students from diverse degrees, masters, and doctorate programs to share work, attend professional talks, and network.
+This project is a tool deddicated for the **IV San Alberto Magno Congress**, hosted by the Faculty of Experimental Sciences at UFV. This flagship academic event gathers students from diverse degrees, masters, and doctorate programs to share work, attend professional talks, and network.
 
 ## System Proposal
 
