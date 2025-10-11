@@ -1,18 +1,18 @@
 # pAIper check
 **Comprehensive Scientific Manuscript Evaluation System**
 
-A tool designed for the multifaceted and automated analysis of the quality, structure, and rigor of academic works. Developed specifically for the **SAM Congress at the Universidad Francisco de Vitoria**.
+A tool designed for the multifaceted and automated analysis of the quality, structure, and rigor of academic works. Built with students and new researchers in mind, so they can have a trustworthy and efficient tool to check the quality of papers they write or come across. Developed specifically for the **SAM Congress at the Universidad Francisco de Vitoria**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/Python-3.9%2B-blue)]()
 
 ## Context: UFV SAM Congress
 
-The **UFV SAM Congress** is a benchmark for disseminating research. To maintain a high standard of quality, **EvaluaSAM** offers a robust solution that complements human judgment, allowing reviewers to focus on scientific significance while the tool validates the technical, structural, and linguistic aspects of the manuscripts.
+This project is a dedicated tool for the **IV San Alberto Magno Congress**, hosted by the Faculty of Experimental Sciences at UFV. This flagship academyc event gathers students from diverse degrees, masters, and doctorate programs to share work, attend professional talks, and network.
 
 ## System Proposal
 
-**EvaluaSAM** implements a set of interconnected modules to provide a comprehensive and objective evaluation. Its modular design facilitates expansion and adaptation to different academic standards.
+**pAIper check** implements a set of interconnected modules to provide a comprehensive and objective evaluation. Its modular design facilitates expansion and adaptation to different academic standards.
 
 ---
 ## Evaluation Modules
