@@ -1,0 +1,6 @@
+python-dotenv
+pymongo
+openai
+pdfplumber
+nltk
+PyPDF2
