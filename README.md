@@ -1,5 +1,5 @@
 # pAIper check
-**Comprehensive Scientific Manuscript Evaluation System**
+**A modular AI-based system for the ethical and scientific evaluation of academic papers**
 
 A tool designed for the multifaceted and automated analysis of the quality, structure, and rigor of academic works. Built with students and new researchers in mind, so they can have a trustworthy and efficient tool to check the quality of papers they write or come across. Developed specifically for the **SAM Congress at the Universidad Francisco de Vitoria**.
 
