@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sys
+import json
 from pathlib import Path
 
 # Add src to path for imports
@@ -20,100 +21,83 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run pAIper Check evaluation")
+    parser = argparse.ArgumentParser(
+        description="Run pAIper Check evaluation with optional GPT-4o-mini deep analysis",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic evaluation (FREE)
+  python main.py --input paper.pdf
+  
+  # With GPT-4o-mini deep analysis (recommended)
+  python main.py --input paper.pdf --use-gpt
+  
+  # Force GPT even if score is good
+  python main.py --input paper.pdf --use-gpt --force-gpt
+  
+  # Save detailed results to JSON
+  python main.py --input paper.pdf --use-gpt --output results.json
+  
+  # Batch analysis
+  python main.py --input papers/*.pdf --use-gpt --batch
+        """
+    )
+    
     parser.add_argument("--input", required=True, help="Path to input paper (PDF or TXT)")
     parser.add_argument("--output", help="Path to save evaluation report (JSON)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument("--use-gpt", action="store_true", 
+                       help="Enable GPT-4o-mini deep analysis for coherence (cost: ~$0.002/paper)")
+    parser.add_argument("--force-gpt", action="store_true",
+                       help="Force GPT analysis even if basic score is good")
+    parser.add_argument("--gpt-report", action="store_true",
+                       help="Show detailed GPT cost report at the end")
+    parser.add_argument("--batch", action="store_true",
+                       help="Process multiple papers (use with wildcards)")
+    
     args = parser.parse_args()
+
+    # Check if GPT is enabled and API key is available
+    if args.use_gpt:
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            logger.warning("GPT analysis requested but OPENAI_API_KEY not found in .env")
+            logger.warning("Add to .env file: OPENAI_API_KEY=sk-your-key-here")
+            logger.warning("Continuing with basic analysis only...")
+            args.use_gpt = False
+        else:
+            logger.info("✓ GPT-4o-mini enabled for deep coherence analysis")
 
     # Validate input file
     input_path = Path(args.input)
+    
+    # Handle batch mode with wildcards
+    if args.batch or '*' in args.input:
+        import glob
+        paper_files = glob.glob(args.input)
+        
+        if not paper_files:
+            logger.error(f"No files found matching: {args.input}")
+            return 1
+        
+        logger.info(f"Batch mode: Found {len(paper_files)} papers")
+        return process_batch(paper_files, args)
+    
+    # Single paper mode
     if not input_path.exists():
         logger.error(f"Input file not found: {args.input}")
         return 1
 
     try:
-        # Parse the paper
-        logger.info(f"Parsing paper: {args.input}")
-        paper = parse_paper_from_pdf(str(input_path))
+        result = process_single_paper(str(input_path), args)
         
-        if args.verbose:
-            logger.info(f"Paper title: {paper.title}")
-            logger.info(f"Number of sections: {len(paper.sections)}")
-            logger.info(f"Number of references: {len(paper.references)}")
-
-        # Run all evaluation modules
-        logger.info("Running evaluation modules...")
-        results = {}
+        if result is None:
+            return 1
         
-        # Structure evaluation
-        logger.info("Evaluating structure...")
-        results["structure"] = check_structure.evaluate(paper)
-        
-        # Linguistics evaluation
-        logger.info("Evaluating linguistics...")
-        results["linguistics"] = check_linguistics.evaluate(paper)
-        
-        # Cohesion evaluation
-        logger.info("Evaluating cohesion...")
-        results["cohesion"] = check_cohesion.evaluate(paper)
-        
-        # Reproducibility evaluation
-        logger.info("Evaluating reproducibility...")
-        results["reproducibility"] = check_reproducibility.evaluate(paper)
-        
-        # References evaluation
-        logger.info("Evaluating references...")
-        results["references"] = check_references.evaluate(paper)
-        
-        # Quality evaluation
-        logger.info("Evaluating scientific quality...")
-        results["quality"] = check_quality.evaluate(paper)
-        
-        # Calculate overall score
-        weights = config.get_evaluation_weights()
-        overall_score = sum(results[pillar]["score"] * weights[pillar] for pillar in results.keys())
-        
-        # Prepare final results
-        final_results = {
-            "paper_info": {
-                "title": paper.title,
-                "abstract_length": len(paper.abstract),
-                "total_sections": len(paper.sections),
-                "total_references": len(paper.references),
-                "total_length": paper.get_total_length()
-            },
-            "overall_score": overall_score,
-            "pillar_scores": results,
-            "weights": weights
-        }
-        
-        # Print results
-        print("\n" + "="*60)
-        print("pAIper Check Evaluation Results")
-        print("="*60)
-        print(f"Paper: {paper.title or 'Untitled'}")
-        print(f"Overall Score: {overall_score:.2f}/1.0")
-        print("\nPillar Scores:")
-        
-        for pillar, result in results.items():
-            score = result["score"]
-            weight = weights[pillar]
-            print(f"  - {result['pillar_name']}: {score:.2f} (weight: {weight:.2f})")
-        
-        print("\nFeedback Summary:")
-        for pillar, result in results.items():
-            print(f"  - {result['pillar_name']}: {result['feedback']}")
-        
-        # Save results if output path specified
-        if args.output:
-            import json
-            output_path = Path(args.output)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(final_results, f, indent=2, ensure_ascii=False)
-            logger.info(f"Results saved to: {args.output}")
-        
-        print("\nEvaluation complete!")
         return 0
         
     except Exception as e:
@@ -122,6 +106,313 @@ def main():
             import traceback
             traceback.print_exc()
         return 1
+
+
+def process_single_paper(input_path, args):
+    """Process a single paper"""
+    
+    # Parse the paper
+    logger.info(f"Parsing paper: {input_path}")
+    paper = parse_paper_from_pdf(input_path)
+    
+    if args.verbose:
+        logger.info(f"Paper title: {paper.title}")
+        logger.info(f"Number of sections: {len(paper.sections)}")
+        logger.info(f"Number of references: {len(paper.references)}")
+
+    # Run all evaluation modules
+    logger.info("Running evaluation modules...")
+    results = {}
+    
+    # Structure evaluation
+    logger.info("Evaluating structure...")
+    results["structure"] = check_structure.evaluate(paper)
+    
+    # Linguistics evaluation
+    logger.info("Evaluating linguistics...")
+    results["linguistics"] = check_linguistics.evaluate(paper)
+    
+    # Cohesion evaluation (with optional GPT)
+    logger.info("Evaluating cohesion...")
+    if args.use_gpt:
+        logger.info("  → GPT-4o-mini deep analysis enabled")
+        results["cohesion"] = check_cohesion.evaluate(paper, use_gpt=True)
+        
+        # Check if GPT was actually used
+        gpt_info = results["cohesion"].get("gpt_analysis", {})
+        if gpt_info.get("used"):
+            cost = gpt_info.get("cost_info", {}).get("cost_usd", 0)
+            logger.info(f"  → GPT analysis performed (cost: ${cost:.4f})")
+        else:
+            reason = gpt_info.get("reason", "Unknown")
+            logger.info(f"  → GPT analysis skipped: {reason}")
+    else:
+        results["cohesion"] = check_cohesion.evaluate(paper, use_gpt=False)
+    
+    # Reproducibility evaluation
+    logger.info("Evaluating reproducibility...")
+    results["reproducibility"] = check_reproducibility.evaluate(paper)
+    
+    # References evaluation
+    logger.info("Evaluating references...")
+    results["references"] = check_references.evaluate(paper)
+    
+    # Quality evaluation
+    logger.info("Evaluating scientific quality...")
+    results["quality"] = check_quality.evaluate(paper)
+    
+    # Calculate overall score
+    weights = config.get_evaluation_weights()
+    overall_score = sum(results[pillar]["score"] * weights[pillar] for pillar in results.keys())
+    
+    # Prepare final results
+    final_results = {
+        "paper_info": {
+            "title": paper.title,
+            "file_path": input_path,
+            "abstract_length": len(paper.abstract) if paper.abstract else 0,
+            "total_sections": len(paper.sections),
+            "total_references": len(paper.references),
+            "total_length": paper.get_total_length() if hasattr(paper, 'get_total_length') else 0
+        },
+        "overall_score": overall_score,
+        "pillar_scores": results,
+        "weights": weights,
+        "gpt_enabled": args.use_gpt
+    }
+    
+    # Add GPT cost report if available
+    if args.use_gpt and "cohesion" in results:
+        cost_report = results["cohesion"].get("cost_report")
+        if cost_report:
+            final_results["gpt_cost_report"] = cost_report
+    
+    # Print results
+    print_results(paper, overall_score, results, weights, args)
+    
+    # Save results if output path specified
+    if args.output:
+        output_path = Path(args.output)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(final_results, f, indent=2, ensure_ascii=False)
+        logger.info(f"Results saved to: {args.output}")
+    
+    return final_results
+
+
+def process_batch(paper_files, args):
+    """Process multiple papers in batch"""
+    
+    print(f"\n{'='*70}")
+    print(f"📚 BATCH ANALYSIS: {len(paper_files)} papers")
+    print(f"{'='*70}\n")
+    
+    all_results = []
+    total_cost = 0.0
+    successful = 0
+    failed = 0
+    
+    for i, paper_file in enumerate(paper_files, 1):
+        print(f"\n[{i}/{len(paper_files)}] Processing: {Path(paper_file).name}")
+        print("-" * 70)
+        
+        try:
+            # Create args copy for this paper
+            paper_args = argparse.Namespace(**vars(args))
+            paper_args.input = paper_file
+            
+            # Process paper
+            result = process_single_paper(paper_file, paper_args)
+            
+            if result:
+                all_results.append(result)
+                successful += 1
+                
+                # Track GPT costs
+                if "gpt_cost_report" in result:
+                    paper_cost = result["gpt_cost_report"].get("total_cost_usd", 0)
+                    total_cost += paper_cost
+            else:
+                failed += 1
+                
+        except Exception as e:
+            logger.error(f"Error processing {paper_file}: {e}")
+            failed += 1
+            if args.verbose:
+                import traceback
+                traceback.print_exc()
+    
+    # Print batch summary
+    print_batch_summary(all_results, successful, failed, total_cost, args)
+    
+    # Save batch results
+    if args.output:
+        batch_output = {
+            "batch_info": {
+                "total_papers": len(paper_files),
+                "successful": successful,
+                "failed": failed,
+                "gpt_enabled": args.use_gpt,
+                "total_gpt_cost": total_cost
+            },
+            "papers": all_results
+        }
+        
+        output_path = Path(args.output)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(batch_output, f, indent=2, ensure_ascii=False)
+        logger.info(f"Batch results saved to: {args.output}")
+    
+    return 0 if failed == 0 else 1
+
+
+def print_results(paper, overall_score, results, weights, args):
+    """Print formatted results"""
+    
+    print("\n" + "="*70)
+    print("📋 pAIper Check Evaluation Results")
+    print("="*70)
+    print(f"Paper: {paper.title or 'Untitled'}")
+    print(f"Overall Score: {overall_score:.2f}/1.0 ", end="")
+    
+    # Add emoji based on score
+    if overall_score >= 0.8:
+        print("🟢 EXCELLENT")
+    elif overall_score >= 0.7:
+        print("🟡 GOOD")
+    elif overall_score >= 0.5:
+        print("🟠 FAIR")
+    else:
+        print("🔴 NEEDS IMPROVEMENT")
+    
+    print("\n" + "-"*70)
+    print("Pillar Scores:")
+    print("-"*70)
+    
+    for pillar, result in results.items():
+        score = result["score"]
+        weight = weights[pillar]
+        pillar_name = result.get('pillar_name', pillar.title())
+        
+        # Score indicator
+        if score >= 0.8:
+            indicator = "🟢"
+        elif score >= 0.7:
+            indicator = "🟡"
+        elif score >= 0.5:
+            indicator = "🟠"
+        else:
+            indicator = "🔴"
+        
+        print(f"  {indicator} {pillar_name:.<40} {score:.2f} (weight: {weight:.2f})")
+    
+    print("\n" + "-"*70)
+    print("Detailed Feedback:")
+    print("-"*70)
+    
+    for pillar, result in results.items():
+        pillar_name = result.get('pillar_name', pillar.title())
+        feedback = result.get('feedback', 'No feedback available')
+        
+        print(f"\n{pillar_name}:")
+        # Truncate long feedback
+        if len(feedback) > 500:
+            print(f"  {feedback[:500]}...")
+        else:
+            print(f"  {feedback}")
+    
+    # Show GPT specific info if used
+    if args.use_gpt and "cohesion" in results:
+        gpt_info = results["cohesion"].get("gpt_analysis", {})
+        
+        if gpt_info.get("success"):
+            print("\n" + "-"*70)
+            print("🤖 GPT-4o-mini Deep Analysis:")
+            print("-"*70)
+            
+            cost_info = gpt_info.get("cost_info", {})
+            print(f"  Cost: ${cost_info.get('cost_usd', 0):.4f}")
+            print(f"  Tokens: {cost_info.get('total_tokens', 0)} (input: {cost_info.get('input_tokens', 0)}, output: {cost_info.get('output_tokens', 0)})")
+            
+            analysis = gpt_info.get("analysis", {})
+            if analysis:
+                if 'semantic_coherence' in analysis:
+                    sem = analysis['semantic_coherence']
+                    print(f"  Semantic Coherence: {sem.get('score', 0):.2f}")
+                
+                if 'logical_flow' in analysis:
+                    flow = analysis['logical_flow']
+                    print(f"  Logical Flow: {flow.get('score', 0):.2f}")
+                
+                issues = analysis.get('issues', [])
+                if issues:
+                    print(f"  Issues Found: {len(issues)}")
+                
+                suggestions = analysis.get('suggestions', [])
+                if suggestions:
+                    print(f"  Recommendations: {len(suggestions)}")
+    
+    # GPT cost report
+    if args.gpt_report and "cohesion" in results:
+        cost_report = results["cohesion"].get("cost_report")
+        if cost_report:
+            print("\n" + "-"*70)
+            print("💰 GPT Cost Report:")
+            print("-"*70)
+            print(f"  Papers analyzed with GPT: {cost_report.get('total_papers_analyzed', 0)}")
+            print(f"  Total cost: ${cost_report.get('total_cost_usd', 0):.4f}")
+            print(f"  Average cost/paper: ${cost_report.get('average_cost_per_paper', 0):.4f}")
+            
+            projections = cost_report.get('cost_projections', {})
+            if projections:
+                print(f"  Projected cost for 100 papers: ${projections.get('100_papers', 0):.2f}")
+    
+    print("\n" + "="*70)
+    print("✓ Evaluation complete!")
+    print("="*70 + "\n")
+
+
+def print_batch_summary(results, successful, failed, total_cost, args):
+    """Print batch processing summary"""
+    
+    print("\n" + "="*70)
+    print("📊 BATCH PROCESSING SUMMARY")
+    print("="*70)
+    
+    total = successful + failed
+    print(f"Total papers: {total}")
+    print(f"  ✓ Successful: {successful}")
+    if failed > 0:
+        print(f"  ✗ Failed: {failed}")
+    
+    if results:
+        # Calculate average score
+        avg_score = sum(r["overall_score"] for r in results) / len(results)
+        print(f"\nAverage overall score: {avg_score:.2f}/1.0")
+        
+        # Score distribution
+        excellent = sum(1 for r in results if r["overall_score"] >= 0.8)
+        good = sum(1 for r in results if 0.7 <= r["overall_score"] < 0.8)
+        fair = sum(1 for r in results if 0.5 <= r["overall_score"] < 0.7)
+        poor = sum(1 for r in results if r["overall_score"] < 0.5)
+        
+        print(f"\nScore distribution:")
+        print(f"  🟢 Excellent (≥0.8): {excellent} papers")
+        print(f"  🟡 Good (0.7-0.8): {good} papers")
+        print(f"  🟠 Fair (0.5-0.7): {fair} papers")
+        print(f"  🔴 Poor (<0.5): {poor} papers")
+    
+    if args.use_gpt and total_cost > 0:
+        print(f"\n💰 GPT Analysis Costs:")
+        print(f"  Total cost: ${total_cost:.4f}")
+        print(f"  Average cost/paper: ${total_cost/max(1, successful):.4f}")
+        
+        # Papers that used GPT
+        gpt_used = sum(1 for r in results if r.get("gpt_cost_report", {}).get("total_papers_analyzed", 0) > 0)
+        print(f"  Papers analyzed with GPT: {gpt_used}/{successful}")
+        print(f"  Cost savings: ~{((successful - gpt_used) * 0.002):.4f} (intelligent filtering)")
+    
+    print("="*70 + "\n")
 
 
 if __name__ == "__main__":
