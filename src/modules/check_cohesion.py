@@ -7,6 +7,7 @@ import re
 from typing import List, Dict, Tuple
 from collections import Counter
 from models.score import PillarResult
+from modules.gpt_cohesion_analyzer import enhance_coherence_with_gpt
 
 # ============== CONFIGURACIÓN ==============
 STOP_WORDS = {
@@ -97,7 +98,27 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
         flow_score, flow_details
     )
     
-    return PillarResult("Coherence & Cohesion", overall_score, feedback).__dict__
+    basic_result = PillarResult("Coherence & Cohesion", overall_score, feedback).__dict__
+    
+    if use_gpt:
+        gpt_analysis_data = {
+            'paper_info': {
+                'title': paper.title,
+                'word_count': text_metrics['word_count']
+            },
+            'structural_metrics': {
+                'connector_density': fluency_details.get('connector_density', 0),
+                'transition_ratio': fluency_details.get('transition_ratio', 0),
+                'terminology_inconsistencies': consistency_details.get('terminology_inconsistencies', 0),
+                'order_violations': flow_details.get('order_violations', 0)
+            },
+            'problematic_areas': [], 
+            'key_sections': {s.title: s.content for s in sections[:2]} if sections else {}
+        }
+        basic_result['gpt_analysis_data'] = gpt_analysis_data
+        return enhance_coherence_with_gpt(paper, basic_result)
+    
+    return basic_result
 
 
 def _calculate_text_metrics(text: str) -> Dict:

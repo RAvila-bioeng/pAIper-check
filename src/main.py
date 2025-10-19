@@ -30,23 +30,23 @@ Examples:
   python main.py --input paper.pdf
   
   # With GPT-4o-mini deep analysis (recommended)
-  python main.py --input paper.pdf --use-gpt
+  python main.py --input paper.pdf --use-chatgpt
   
   # Force GPT even if score is good
-  python main.py --input paper.pdf --use-gpt --force-gpt
+  python main.py --input paper.pdf --use-chatgpt --force-gpt
   
   # Save detailed results to JSON
-  python main.py --input paper.pdf --use-gpt --output results.json
+  python main.py --input paper.pdf --use-chatgpt --output results.json
   
   # Batch analysis
-  python main.py --input papers/*.pdf --use-gpt --batch
+  python main.py --input papers/*.pdf --use-chatgpt --batch
         """
     )
     
     parser.add_argument("--input", required=True, help="Path to input paper (PDF or TXT)")
     parser.add_argument("--output", help="Path to save evaluation report (JSON)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parser.add_argument("--use-gpt", action="store_true", 
+    parser.add_argument("--use-chatgpt", action="store_true", 
                        help="Enable GPT-4o-mini deep analysis for coherence (cost: ~$0.002/paper)")
     parser.add_argument("--force-gpt", action="store_true",
                        help="Force GPT analysis even if basic score is good")
@@ -58,7 +58,7 @@ Examples:
     args = parser.parse_args()
 
     # Check if GPT is enabled and API key is available
-    if args.use_gpt:
+    if args.use_chatgpt:
         import os
         from dotenv import load_dotenv
         load_dotenv()
@@ -68,7 +68,7 @@ Examples:
             logger.warning("GPT analysis requested but OPENAI_API_KEY not found in .env")
             logger.warning("Add to .env file: OPENAI_API_KEY=sk-your-key-here")
             logger.warning("Continuing with basic analysis only...")
-            args.use_gpt = False
+            args.use_chatgpt = False
         else:
             logger.info("✓ GPT-4o-mini enabled for deep coherence analysis")
 
@@ -134,7 +134,7 @@ def process_single_paper(input_path, args):
     
     # Cohesion evaluation (with optional GPT)
     logger.info("Evaluating cohesion...")
-    if args.use_gpt:
+    if args.use_chatgpt:
         logger.info("  → GPT-4o-mini deep analysis enabled")
         results["cohesion"] = check_cohesion.evaluate(paper, use_gpt=True)
         
@@ -178,11 +178,11 @@ def process_single_paper(input_path, args):
         "overall_score": overall_score,
         "pillar_scores": results,
         "weights": weights,
-        "gpt_enabled": args.use_gpt
+        "gpt_enabled": args.use_chatgpt
     }
     
     # Add GPT cost report if available
-    if args.use_gpt and "cohesion" in results:
+    if args.use_chatgpt and "cohesion" in results:
         cost_report = results["cohesion"].get("cost_report")
         if cost_report:
             final_results["gpt_cost_report"] = cost_report
@@ -252,7 +252,7 @@ def process_batch(paper_files, args):
                 "total_papers": len(paper_files),
                 "successful": successful,
                 "failed": failed,
-                "gpt_enabled": args.use_gpt,
+                "gpt_enabled": args.use_chatgpt,
                 "total_gpt_cost": total_cost
             },
             "papers": all_results
@@ -322,7 +322,7 @@ def print_results(paper, overall_score, results, weights, args):
             print(f"  {feedback}")
     
     # Show GPT specific info if used
-    if args.use_gpt and "cohesion" in results:
+    if args.use_chatgpt and "cohesion" in results:
         gpt_info = results["cohesion"].get("gpt_analysis", {})
         
         if gpt_info.get("success"):
@@ -347,10 +347,14 @@ def print_results(paper, overall_score, results, weights, args):
                 issues = analysis.get('issues', [])
                 if issues:
                     print(f"  Issues Found: {len(issues)}")
+                    for issue in issues:
+                        print(f"    - {issue.get('description', 'N/A')}")
                 
                 suggestions = analysis.get('suggestions', [])
                 if suggestions:
                     print(f"  Recommendations: {len(suggestions)}")
+                    for suggestion in suggestions:
+                        print(f"    - {suggestion.get('action', 'N/A')}")
     
     # GPT cost report
     if args.gpt_report and "cohesion" in results:
@@ -402,7 +406,7 @@ def print_batch_summary(results, successful, failed, total_cost, args):
         print(f"  🟠 Fair (0.5-0.7): {fair} papers")
         print(f"  🔴 Poor (<0.5): {poor} papers")
     
-    if args.use_gpt and total_cost > 0:
+    if args.use_chatgpt and total_cost > 0:
         print(f"\n💰 GPT Analysis Costs:")
         print(f"  Total cost: ${total_cost:.4f}")
         print(f"  Average cost/paper: ${total_cost/max(1, successful):.4f}")
