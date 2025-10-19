@@ -336,25 +336,31 @@ def print_results(paper, overall_score, results, weights, args):
             
             analysis = gpt_info.get("analysis", {})
             if analysis:
-                if 'semantic_coherence' in analysis:
-                    sem = analysis['semantic_coherence']
-                    print(f"  Semantic Coherence: {sem.get('score', 0):.2f}")
+                print(f"  Overall GPT Score: {analysis.get('overall_score', 0):.2f} - Verdict: {analysis.get('final_verdict', 'N/A')}")
                 
-                if 'logical_flow' in analysis:
-                    flow = analysis['logical_flow']
-                    print(f"  Logical Flow: {flow.get('score', 0):.2f}")
-                
+                if 'sub_modules' in analysis:
+                    print("\n  Cohesion Sub-modules:")
+                    for name, sub in analysis['sub_modules'].items():
+                        if sub: # Check if sub-module result exists
+                            print(f"    - {name.replace('_', ' ').title():.<25} {sub.get('score', 0):.2f} - {sub.get('feedback', 'N/A')}")
+
                 issues = analysis.get('issues', [])
                 if issues:
-                    print(f"  Issues Found: {len(issues)}")
+                    print("\n  Issues Found:")
                     for issue in issues:
-                        print(f"    - {issue.get('description', 'N/A')}")
+                        print(f"    - {issue}")
                 
                 suggestions = analysis.get('suggestions', [])
                 if suggestions:
-                    print(f"  Recommendations: {len(suggestions)}")
+                    print("\n  Recommendations:")
                     for suggestion in suggestions:
-                        print(f"    - {suggestion.get('action', 'N/A')}")
+                        print(f"    - {suggestion}")
+                
+                strengths = analysis.get('strengths', [])
+                if strengths:
+                    print("\n  Strengths:")
+                    for strength in strengths:
+                        print(f"    - {strength}")
     
     # GPT cost report
     if args.gpt_report and "cohesion" in results:
