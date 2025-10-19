@@ -10,6 +10,7 @@ import time
 from typing import Dict, Optional, List
 from openai import OpenAI
 from dotenv import load_dotenv
+from utils.semantic_preprocessor import extract_critical_snippets
 
 # Load environment variables
 load_dotenv()
@@ -197,49 +198,65 @@ Do not repeat the draft; provide a new, higher-quality JSON object."""
             }
 
     def _analyze_terminology(self, paper, gpt_analysis_data: Dict) -> Dict:
-        """Analyzes the consistency of technical terms."""
+        """Analyzes the consistency of technical terms using semantic extraction."""
         system_prompt = "You are an expert scientific reviewer analyzing terminological consistency. Respond in JSON."
         
+        # Extract critical snippets from the introduction, using the abstract as an anchor.
+        introduction_content = paper.get_section_content('introduction')
+        critical_intro = extract_critical_snippets(introduction_content, paper.abstract, num_snippets=5)
+
         prompt = (
-            "Analyze the terminological consistency of the following excerpts.\n"
-            f"**Abstract:**\n{paper.abstract[:1000]}...\n\n"
-            f"**Introduction:**\n{paper.get_section_content('introduction')[:1000]}...\n\n"
+            "Analyze the terminological consistency between the abstract and the key parts of the introduction.\n"
+            f"**Abstract:**\n{paper.abstract}\n\n"
+            f"**Key Introduction Snippets:**\n{critical_intro}\n\n"
             "YOUR TASK:\n"
             "1. Rate consistency from 0.0 to 1.0.\n"
-            "2. Provide brief feedback.\n"
-            "3. List up to 2 inconsistent term examples.\n"
+            "2. Provide brief feedback on terminology usage.\n"
+            "3. List up to 2 inconsistent term examples if any are found.\n"
             'RESPOND IN THIS JSON FORMAT:\n'
             '{"score": <float>, "feedback": "<string>", "inconsistencies": [{"term1": "<string>", "term2": "<string>"}]}'
         )
         return self._call_gpt(prompt, system_prompt)
 
     def _analyze_progression(self, paper, gpt_analysis_data: Dict) -> Dict:
-        """Analyzes the logical flow between sections."""
+        """Analyzes the logical flow between sections using semantic extraction."""
         system_prompt = "You are an expert scientific reviewer analyzing logical progression. Respond in JSON."
         
+        # Extract critical snippets from each core section
+        method_content = paper.get_section_content('methodology')
+        results_content = paper.get_section_content('results')
+        discussion_content = paper.get_section_content('discussion')
+
+        critical_method = extract_critical_snippets(method_content, "Methodology", num_snippets=4)
+        critical_results = extract_critical_snippets(results_content, "Results", num_snippets=4)
+        critical_discussion = extract_critical_snippets(discussion_content, "Discussion", num_snippets=4)
+
         prompt = (
-            "Analyze the logical progression from Methodology to Results and Discussion in these excerpts.\n"
-            f"**Methodology:**\n{paper.get_section_content('methodology')[:1000]}...\n\n"
-            f"**Results:**\n{paper.get_section_content('results')[:1000]}...\n\n"
-            f"**Discussion:**\n{paper.get_section_content('discussion')[:1000]}...\n\n"
+            "Analyze the logical progression between these key snippets from the paper's core sections.\n"
+            f"**Key Methodology Snippets:**\n{critical_method}\n\n"
+            f"**Key Results Snippets:**\n{critical_results}\n\n"
+            f"**Key Discussion Snippets:**\n{critical_discussion}\n\n"
             "YOUR TASK:\n"
-            "1. Rate the logical flow from 0.0 to 1.0 (does the story make sense?).\n"
-            "2. Provide brief feedback on the connection between these sections.\n"
+            "1. Rate the logical flow from 0.0 to 1.0 (do the results follow the methods? Does the discussion interpret the results?).\n"
+            "2. Provide brief feedback on the narrative connection between these sections.\n"
             'RESPOND IN THIS JSON FORMAT:\n'
             '{"score": <float>, "feedback": "<string>"}'
         )
         return self._call_gpt(prompt, system_prompt)
 
     def _analyze_abstract_expansion(self, paper, gpt_analysis_data: Dict) -> Dict:
-        """Checks if the introduction expands on the abstract."""
+        """Checks if the introduction expands on the abstract using semantic extraction."""
         system_prompt = "You are an expert scientific reviewer analyzing the connection between abstract and introduction. Respond in JSON."
         
+        introduction_content = paper.get_section_content('introduction')
+        critical_intro = extract_critical_snippets(introduction_content, paper.abstract, num_snippets=5)
+
         prompt = (
-            "Analyze if the introduction effectively expands on the promises made in the abstract.\n"
-            f"**Abstract:**\n{paper.abstract[:1500]}...\n\n"
-            f"**Introduction:**\n{paper.get_section_content('introduction')[:1500]}...\n\n"
+            "Analyze if the key snippets from the introduction effectively expand on the promises made in the abstract.\n"
+            f"**Abstract:**\n{paper.abstract}\n\n"
+            f"**Key Introduction Snippets:**\n{critical_intro}\n\n"
             "YOUR TASK:\n"
-            "1. Rate how well the introduction expands on the abstract from 0.0 to 1.0.\n"
+            "1. Rate how well the introduction snippets expand on the abstract's core claims from 0.0 to 1.0.\n"
             "2. Provide brief feedback on this connection.\n"
             'RESPOND IN THIS JSON FORMAT:\n'
             '{"score": <float>, "feedback": "<string>"}'
@@ -247,15 +264,22 @@ Do not repeat the draft; provide a new, higher-quality JSON object."""
         return self._call_gpt(prompt, system_prompt)
 
     def _analyze_conclusion_response(self, paper, gpt_analysis_data: Dict) -> Dict:
-        """Checks if the conclusion answers the initial questions."""
-        system_prompt = "You are an expert scientific reviewer analyzing the link between the introduction's goals and the conclusion's answers. Respond in JSON."
+        """Checks if the conclusion answers the initial questions using semantic extraction."""
+        system_prompt = "You are an expert scientific reviewer analyzing the link between introduction goals and conclusion answers. Respond in JSON."
         
+        # Extract critical snippets from both introduction and conclusion
+        introduction_content = paper.get_section_content('introduction')
+        conclusion_content = paper.get_section_content('conclusion')
+        
+        critical_intro = extract_critical_snippets(introduction_content, "Introduction objectives research questions", num_snippets=4)
+        critical_conclusion = extract_critical_snippets(conclusion_content, "Conclusion summary findings", num_snippets=4)
+
         prompt = (
-            "Analyze if the conclusion effectively addresses the objectives or research questions stated in the introduction.\n"
-            f"**Introduction:**\n{paper.get_section_content('introduction')[:1500]}...\n\n"
-            f"**Conclusion:**\n{paper.get_section_content('conclusion')[:1500]}...\n\n"
+            "Analyze if the key snippets from the conclusion effectively address the objectives stated in the key snippets from the introduction.\n"
+            f"**Key Introduction Snippets (Objectives):**\n{critical_intro}\n\n"
+            f"**Key Conclusion Snippets (Answers):**\n{critical_conclusion}\n\n"
             "YOUR TASK:\n"
-            "1. Rate how well the conclusion answers the introduction's questions from 0.0 to 1.0.\n"
+            "1. Rate how well the conclusion snippets answer the introduction's stated goals from 0.0 to 1.0.\n"
             "2. Provide brief feedback on this narrative closure.\n"
             'RESPOND IN THIS JSON FORMAT:\n'
             '{"score": <float>, "feedback": "<string>"}'
@@ -263,24 +287,28 @@ Do not repeat the draft; provide a new, higher-quality JSON object."""
         return self._call_gpt(prompt, system_prompt)
 
     def _analyze_lexical_richness(self, paper, gpt_analysis_data: Dict) -> Dict:
-        """Analyzes word repetition and vocabulary variety."""
+        """Analyzes word repetition and vocabulary variety using a semantic sample."""
         system_prompt = "You are an expert linguistic reviewer analyzing lexical richness. Respond in JSON."
         
-        # We use the full text for this analysis as repetition can occur anywhere.
-        # Truncate to a reasonable length to manage token count.
-        text_sample = paper.full_text[:5000]
+        # Use semantic extraction to get a diverse sample of the text, rather than just the start.
+        # We use the paper's title as a broad anchor to get a general sense of the content.
+        text_sample = extract_critical_snippets(paper.full_text, paper.title, num_snippets=10)
+        
+        # Fallback if sample is too short
+        if len(text_sample) < 500:
+            text_sample = paper.full_text[:3000]
 
         prompt = (
-            "Analyze the lexical richness of the following text. Look for excessive repetition of non-technical words and phrases.\n"
+            "Analyze the lexical richness of the following representative text sample. Look for excessive repetition of non-technical words and phrases.\n"
             f"**Text Sample:**\n{text_sample}...\n\n"
             "YOUR TASK:\n"
             "1. Rate the lexical richness from 0.0 (very repetitive) to 1.0 (very rich).\n"
-            "2. Provide brief feedback.\n"
-            "3. List up to 2 examples of repetitive phrases.\n"
+            "2. Provide brief feedback on vocabulary use.\n"
+            "3. List up to 2 examples of repetitive non-technical phrases if any are found.\n"
             'RESPOND IN THIS JSON FORMAT:\n'
             '{"score": <float>, "feedback": "<string>", "repetitive_phrases": ["<phrase1>", "<phrase2>"]}'
         )
-        return self._call_gpt(prompt, system_prompt)
+        return self._call_gpt(prompt, system_prompt, max_tokens=400)
 
     def _aggregate_results(self, sub_results: Dict, basic_score: float) -> tuple:
         """Aggregates results from all sub-modules."""
