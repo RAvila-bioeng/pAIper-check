@@ -205,38 +205,44 @@ class OrthographicAnalyzer(BaseAnalyzer):
         return errors
     
     def _check_spelling_errors(self, text: str) -> List[LinguisticError]:
-        """Check for spelling errors using spell checker."""
+        """Check for spelling errors using spell checker in a more efficient way."""
         errors = []
         
-        # Extract words (handling hyphenated words and acronyms)
+        # Extract words, filter by length and known academic words
         words = re.findall(r'\b[A-Za-z]+\b', text)
         
-        for i, word in enumerate(words):
-            word_lower = word.lower()
-            
-            # Skip if it's a known academic word or proper noun
-            if (word_lower in self.common_academic_words or 
-                word[0].isupper() and len(word) > 1):  # Likely proper noun
-                continue
-            
-            # Check spelling
-            if word_lower not in self.spell_checker:
-                candidates = self.spell_checker.candidates(word_lower)
-                if candidates:
-                    suggested = min(candidates, key=lambda x: abs(len(x) - len(word_lower)))
+        unique_words = {word.lower() for word in words if len(word) <= 50 and not (word.lower() in self.common_academic_words or (word[0].isupper() and len(word) > 1))}
+        
+        # Find all misspelled words in one go
+        misspelled = self.spell_checker.unknown(unique_words)
+        
+        if not misspelled:
+            return errors
+
+        # Create a map of misspelled words to their suggestions
+        correction_map = {word: self.spell_checker.correction(word) for word in misspelled}
+
+        # Find all occurrences of misspelled words in the original text
+        for word in misspelled:
+            try:
+                # Use regex to find all occurrences of the misspelled word as a whole word
+                for match in re.finditer(r'\b' + re.escape(word) + r'\b', text, re.IGNORECASE):
+                    original_word = match.group(0)
+                    start_pos = match.start()
                     
-                    # Find position in original text
-                    start_pos = text.find(word, text.find(word, i * 20))  # Approximate position
                     error = LinguisticError(
                         error_type=ErrorType.SPELLING,
-                        text=word,
+                        text=original_word,
                         start_pos=start_pos,
-                        end_pos=start_pos + len(word),
+                        end_pos=start_pos + len(original_word),
                         severity=0.7,
-                        suggested_correction=suggested,
-                        explanation=f"Possible spelling error: '{word}'"
+                        suggested_correction=correction_map.get(word),
+                        explanation=f"Possible spelling error: '{original_word}'"
                     )
                     errors.append(error)
+            except re.error:
+                # Ignore regex errors for complex/problematic word patterns
+                continue
         
         return errors
     
