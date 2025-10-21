@@ -5,3 +5,5 @@ pdfplumber
 nltk
 PyPDF2
 pyyaml
+pandas
+sentence-transformers torch
