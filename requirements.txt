@@ -6,9 +6,7 @@ nltk
 PyPDF2
 pyyaml
 spacy>=3.7.0
-langdetect>=1.0.9
 textstat>=0.7.3
 pyspellchecker>=0.6.2
-language-tool-python>=2.7.1
 scikit-learn>=1.3.0
 numpy>=1.24.0
