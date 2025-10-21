@@ -1,70 +1,36 @@
 """
-Linguistic Quality Control Module - Enhanced Version
-Advanced NLP-based evaluation of academic paper linguistic quality.
-
-This module provides comprehensive analysis of:
-- Orthographic and grammatical accuracy
-- Terminology consistency and domain-specific vocabulary
-- Academic writing style and tone
-- Multilingual support and language detection
-- Advanced error detection and reporting
-
-Architecture:
-- LinguisticAnalyzer: Main orchestrator class
-- OrthographicAnalyzer: Spelling and typography analysis
-- GrammarAnalyzer: Grammar and syntax evaluation
-- TerminologyAnalyzer: Domain-specific term consistency
-- StyleAnalyzer: Academic tone and formality assessment
-- Preprocessor: Text cleaning and normalization
+Linguistic Quality Control Module - Optimized Version
+Efficient NLP-based evaluation of academic paper linguistic quality.
 """
 
 import re
 import logging
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Set, Any
+from typing import Dict, List, Optional, Set, Any
 from enum import Enum
+from collections import defaultdict
 
-# Core dependencies (with graceful fallbacks)
+# Core dependencies with graceful fallbacks
 try:
     import spacy
-    from spacy.tokens import Doc, Span
     SPACY_AVAILABLE = True
 except ImportError:
     SPACY_AVAILABLE = False
-    logging.warning("spaCy not available. Limited linguistic analysis will be performed.")
+    logging.warning("spaCy not available. Using basic analysis.")
 
 try:
     from spellchecker import SpellChecker
     SPELLCHECKER_AVAILABLE = True
 except ImportError:
     SPELLCHECKER_AVAILABLE = False
-    logging.warning("pyspellchecker not available. Basic spell checking will be used.")
-
-try:
-    from langdetect import detect, LangDetectException
-    LANGDETECT_AVAILABLE = True
-except ImportError:
-    LANGDETECT_AVAILABLE = False
-    logging.warning("langdetect not available. Language detection will be skipped.")
+    logging.warning("pyspellchecker not available.")
 
 try:
     import textstat
     TEXTSTAT_AVAILABLE = True
 except ImportError:
     TEXTSTAT_AVAILABLE = False
-    logging.warning("textstat not available. Readability analysis will be limited.")
-
-try:
-    import numpy as np
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    SKLEARN_AVAILABLE = False
-    logging.warning("scikit-learn not available. Advanced similarity analysis will be limited.")
-
-from models.score import PillarResult
+    logging.warning("textstat not available.")
 
 
 class ErrorType(Enum):
@@ -74,799 +40,458 @@ class ErrorType(Enum):
     PUNCTUATION = "punctuation"
     STYLE = "style"
     TERMINOLOGY = "terminology"
-    CONSISTENCY = "consistency"
-    FORMALITY = "formality"
 
 
 @dataclass
 class LinguisticError:
-    """Represents a single linguistic error found in the text."""
+    """Represents a single linguistic error."""
     error_type: ErrorType
     text: str
-    start_pos: int
-    end_pos: int
-    severity: float  # 0.0 (minor) to 1.0 (critical)
-    suggested_correction: Optional[str] = None
-    context: Optional[str] = None
+    severity: float  # 0.0 to 1.0
+    suggestion: Optional[str] = None
     explanation: Optional[str] = None
-
-
-@dataclass
-class SectionAnalysis:
-    """Analysis results for a single section of the paper."""
-    section_name: str
-    text: str
-    errors: List[LinguisticError]
-    readability_score: float
-    formality_score: float
-    terminology_consistency: float
-
-
-class Preprocessor:
-    """Text preprocessing and normalization utilities."""
-    
-    @staticmethod
-    def clean_and_normalize(text: str) -> str:
-        """Clean and normalize text for analysis."""
-        if not text:
-            return ""
-        
-        # Remove excessive whitespace
-        text = re.sub(r'\s+', ' ', text)
-        
-        # Fix common encoding issues
-        text = text.replace('\u2019', "'")  # Smart apostrophe
-        text = text.replace('\u2018', "'")  # Left single quote
-        text = text.replace('\u201c', '"')  # Left double quote
-        text = text.replace('\u201d', '"')  # Right double quote
-        text = text.replace('\u2013', '-')  # En dash
-        text = text.replace('\u2014', '--')  # Em dash
-        
-        return text.strip()
-    
-    @staticmethod
-    def extract_sentences(text: str) -> List[str]:
-        """Extract sentences from text."""
-        # Improved sentence splitting that handles academic text better
-        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
-        return [s.strip() for s in sentences if s.strip()]
-    
-    @staticmethod
-    def detect_language(text: str) -> str:
-        """Detect the primary language of the text."""
-        if not LANGDETECT_AVAILABLE or not text.strip():
-            return "unknown"
-        
-        try:
-            # Use first 1000 characters for language detection to avoid errors with short text
-            sample_text = text[:1000] if len(text) > 1000 else text
-            if len(sample_text.strip()) < 10:
-                return "unknown"
-            return detect(sample_text)
-        except LangDetectException:
-            return "unknown"
-
-
-class BaseAnalyzer(ABC):
-    """Base class for all linguistic analyzers."""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or {}
-        self.logger = logging.getLogger(self.__class__.__name__)
-    
-    @abstractmethod
-    def analyze(self, text: str, context: Optional[Dict[str, Any]] = None) -> List[LinguisticError]:
-        """Analyze text and return list of errors found."""
-        pass
-
-
-class OrthographicAnalyzer(BaseAnalyzer):
-    """Analyzes spelling, typography, and basic orthographic issues."""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        super().__init__(config)
-        self.spell_checker = None
-        self.common_academic_words = self._load_academic_vocabulary()
-        
-        if SPELLCHECKER_AVAILABLE:
-            try:
-                self.spell_checker = SpellChecker(language='en')
-                # Add academic domain-specific words
-                self.spell_checker.word_frequency.load_words(self.common_academic_words)
-            except Exception as e:
-                self.logger.warning(f"Could not initialize spell checker: {e}")
-    
-    def _load_academic_vocabulary(self) -> Set[str]:
-        """Load common academic vocabulary that should not be flagged as errors."""
-        academic_words = {
-            'algorithm', 'analysis', 'application', 'approach', 'assessment', 'characteristics',
-            'classification', 'comparison', 'computation', 'conclusion', 'configuration', 'correlation',
-            'demonstration', 'distribution', 'evaluation', 'experiment', 'framework', 'implementation',
-            'improvement', 'investigation', 'limitation', 'methodology', 'observation', 'optimization',
-            'parameter', 'performance', 'probability', 'reliability', 'representation', 'validation',
-            'verification', 'visualization', 'statistical', 'empirical', 'theoretical', 'experimental'
-        }
-        return academic_words
-    
-    def analyze(self, text: str, context: Optional[Dict[str, Any]] = None) -> List[LinguisticError]:
-        """Analyze text for orthographic errors."""
-        errors = []
-        
-        # Check for basic spelling errors if spell checker is available
-        if self.spell_checker:
-            errors.extend(self._check_spelling_errors(text))
-        
-        # Check for common typos and misspellings
-        errors.extend(self._check_common_typos(text))
-        
-        # Check for capitalization issues
-        errors.extend(self._check_capitalization_issues(text))
-        
-        return errors
-    
-    def _check_spelling_errors(self, text: str) -> List[LinguisticError]:
-        """Check for spelling errors using spell checker in a more efficient way."""
-        errors = []
-        
-        # Extract words, filter by length and known academic words
-        words = re.findall(r'\b[A-Za-z]+\b', text)
-        
-        unique_words = {word.lower() for word in words if len(word) <= 50 and not (word.lower() in self.common_academic_words or (word[0].isupper() and len(word) > 1))}
-        
-        # Find all misspelled words in one go
-        misspelled = self.spell_checker.unknown(unique_words)
-        
-        if not misspelled:
-            return errors
-
-        # Create a map of misspelled words to their suggestions
-        correction_map = {word: self.spell_checker.correction(word) for word in misspelled}
-
-        # Find all occurrences of misspelled words in the original text
-        for word in misspelled:
-            try:
-                # Use regex to find all occurrences of the misspelled word as a whole word
-                for match in re.finditer(r'\b' + re.escape(word) + r'\b', text, re.IGNORECASE):
-                    original_word = match.group(0)
-                    start_pos = match.start()
-                    
-                    error = LinguisticError(
-                        error_type=ErrorType.SPELLING,
-                        text=original_word,
-                        start_pos=start_pos,
-                        end_pos=start_pos + len(original_word),
-                        severity=0.7,
-                        suggested_correction=correction_map.get(word),
-                        explanation=f"Possible spelling error: '{original_word}'"
-                    )
-                    errors.append(error)
-            except re.error:
-                # Ignore regex errors for complex/problematic word patterns
-                continue
-        
-        return errors
-    
-    def _check_common_typos(self, text: str) -> List[LinguisticError]:
-        """Check for common typos in academic writing."""
-        errors = []
-        
-        common_typos = {
-            r'\bteh\b': 'the',
-            r'\badn\b': 'and',
-            r'\bhte\b': 'the',
-            r'\btaht\b': 'that',
-            r'\bwih\b': 'with',
-            r'\bthier\b': 'their',
-            r'\brecieve\b': 'receive',
-            r'\boccured\b': 'occurred',
-            r'\bseperate\b': 'separate',
-            r'\bdefinately\b': 'definitely',
-            r'\bprinicple\b': 'principle',
-            r'\benviroment\b': 'environment',
-            r'\bexperiement\b': 'experiment',
-            r'\bmethodolgy\b': 'methodology',
-            r'\banaylsis\b': 'analysis'
-        }
-        
-        for pattern, correction in common_typos.items():
-            for match in re.finditer(pattern, text, re.IGNORECASE):
-                error = LinguisticError(
-                    error_type=ErrorType.SPELLING,
-                    text=match.group(),
-                    start_pos=match.start(),
-                    end_pos=match.end(),
-                    severity=0.8,
-                    suggested_correction=correction,
-                    explanation=f"Common typo found: '{match.group()}'"
-                )
-                errors.append(error)
-        
-        return errors
-    
-    def _check_capitalization_issues(self, text: str) -> List[LinguisticError]:
-        """Check for capitalization issues."""
-        errors = []
-        
-        # Check for lowercase after periods (should be uppercase)
-        for match in re.finditer(r'\.\s+[a-z]', text):
-            error = LinguisticError(
-                error_type=ErrorType.PUNCTUATION,
-                text=match.group(),
-                start_pos=match.start() + 2,
-                end_pos=match.end(),
-                severity=0.6,
-                suggested_correction=match.group()[:-1] + match.group()[-1].upper(),
-                explanation="Sentence should start with capital letter after period"
-            )
-            errors.append(error)
-        
-        return errors
-
-
-class GrammarAnalyzer(BaseAnalyzer):
-    """Analyzes grammar and syntax issues."""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        super().__init__(config)
-        self.nlp_model = None
-        
-        if SPACY_AVAILABLE:
-            try:
-                self.nlp_model = spacy.load("en_core_web_sm")
-                self.logger.debug("spaCy English model loaded successfully")
-            except (OSError, IOError) as e:
-                self.logger.warning(f"spaCy English model not found: {e}. Limited grammar analysis will be performed.")
-            except Exception as e:
-                self.logger.warning(f"Unexpected error loading spaCy model: {e}. Limited grammar analysis will be performed.")
-    
-    def analyze(self, text: str, context: Optional[Dict[str, Any]] = None) -> List[LinguisticError]:
-        """Analyze text for grammar errors."""
-        errors = []
-        
-        if self.nlp_model:
-            errors.extend(self._analyze_with_spacy(text))
-        else:
-            errors.extend(self._analyze_with_regex(text))
-        
-        return errors
-    
-    def _analyze_with_spacy(self, text: str) -> List[LinguisticError]:
-        """Use spaCy for advanced grammar analysis."""
-        errors = []
-        doc = self.nlp_model(text)
-        
-        # Check for sentence fragments
-        for sent in doc.sents:
-            if len([token for token in sent if not token.is_punct and not token.is_space]) < 3:
-                error = LinguisticError(
-                    error_type=ErrorType.GRAMMAR,
-                    text=sent.text.strip(),
-                    start_pos=sent.start_char,
-                    end_pos=sent.end_char,
-                    severity=0.5,
-                    explanation="Potential sentence fragment"
-                )
-                errors.append(error)
-        
-        # Check for subject-verb agreement issues (basic)
-        for token in doc:
-            if token.dep_ == "nsubj" and token.head.pos_ == "VERB":
-                if token.morph.get("Number") and token.head.morph.get("Number"):
-                    subj_number = token.morph.get("Number")[0] if token.morph.get("Number") else None
-                    verb_number = token.head.morph.get("Number")[0] if token.head.morph.get("Number") else None
-                    if subj_number != verb_number:
-                        error = LinguisticError(
-                            error_type=ErrorType.GRAMMAR,
-                            text=f"{token.text} {token.head.text}",
-                            start_pos=token.idx,
-                            end_pos=token.head.idx + len(token.head.text),
-                            severity=0.8,
-                            explanation="Potential subject-verb disagreement"
-                        )
-                        errors.append(error)
-        
-        return errors
-    
-    def _analyze_with_regex(self, text: str) -> List[LinguisticError]:
-        """Fallback grammar analysis using regex patterns."""
-        errors = []
-        
-        # Check for double spaces
-        for match in re.finditer(r' {2,}', text):
-            error = LinguisticError(
-                error_type=ErrorType.PUNCTUATION,
-                text=match.group(),
-                start_pos=match.start(),
-                end_pos=match.end(),
-                severity=0.3,
-                suggested_correction=" ",
-                explanation="Excessive whitespace found"
-            )
-            errors.append(error)
-        
-        # Check for missing spaces after punctuation
-        for match in re.finditer(r'[.!?][A-Za-z]', text):
-            error = LinguisticError(
-                error_type=ErrorType.PUNCTUATION,
-                text=match.group(),
-                start_pos=match.start() + 1,
-                end_pos=match.end(),
-                severity=0.6,
-                explanation="Missing space after punctuation"
-            )
-            errors.append(error)
-        
-        return errors
-
-
-class TerminologyAnalyzer(BaseAnalyzer):
-    """Analyzes terminology consistency and domain-specific vocabulary."""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        super().__init__(config)
-        self.term_variations = self._load_term_variations()
-        self.domain_terms = set()
-    
-    def _load_term_variations(self) -> Dict[str, Set[str]]:
-        """Load common term variations that should be consistent."""
-        return {
-            'dataset': {'data set', 'data-set', 'datasets', 'data sets'},
-            'machine learning': {'ml', 'machine-learning', 'ML'},
-            'artificial intelligence': {'ai', 'A.I.', 'artificial-intelligence', 'AI'},
-            'neural network': {'neural networks', 'neural-networks', 'NN', 'neural nets'},
-            'deep learning': {'dl', 'deep-learning', 'DL'},
-            'accuracy': {'accuracies', 'ACC', 'acc'},
-            'precision': {'prec', 'PREC'},
-            'recall': {'rec', 'REC'},
-            'f-score': {'f1-score', 'f1_score', 'F1-score', 'F1_score'}
-        }
-    
-    def analyze(self, text: str, context: Optional[Dict[str, Any]] = None) -> List[LinguisticError]:
-        """Analyze text for terminology consistency issues."""
-        errors = []
-        
-        # Extract and track term usage
-        term_usage = {}
-        
-        for canonical_term, variations in self.term_variations.items():
-            all_variants = variations | {canonical_term}
-            
-            for variant in all_variants:
-                # Case-insensitive search
-                pattern = r'\b' + re.escape(variant) + r'\b'
-                matches = list(re.finditer(pattern, text, re.IGNORECASE))
-                
-                if matches:
-                    if canonical_term not in term_usage:
-                        term_usage[canonical_term] = []
-                    term_usage[canonical_term].extend(matches)
-        
-        # Check for inconsistencies
-        for canonical_term, matches in term_usage.items():
-            if len(matches) > 1:
-                # Check if multiple variants are used
-                used_variants = set()
-                for match in matches:
-                    used_variants.add(match.group())
-                
-                if len(used_variants) > 1:
-                    first_variant = used_variants.pop()
-                    for variant in used_variants:
-                        for match in matches:
-                            if match.group() == variant:
-                                error = LinguisticError(
-                                    error_type=ErrorType.TERMINOLOGY,
-                                    text=variant,
-                                    start_pos=match.start(),
-                                    end_pos=match.end(),
-                                    severity=0.7,
-                                    suggested_correction=first_variant,
-                                    explanation=f"Inconsistent terminology. Consider using '{first_variant}' consistently."
-                                )
-                                errors.append(error)
-        
-        return errors
-
-
-class StyleAnalyzer(BaseAnalyzer):
-    """Analyzes academic writing style and formality."""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        super().__init__(config)
-        self.informal_patterns = self._load_informal_patterns()
-        self.academic_phrases = self._load_academic_phrases()
-    
-    def _load_informal_patterns(self) -> List[str]:
-        """Load patterns of informal language to avoid."""
-        return [
-            r'\bawesome\b', r'\bcool\b', r'\bnice\b', r'\bgreat\b',
-            r'\blots of\b', r'\btons of\b', r'\bpretty much\b',
-            r'\bkind of\b', r'\bsort of\b', r'\bvery very\b',
-            r'\breally really\b', r'\bso so\b', r'\bway too\b',
-            r'\bcheck out\b', r'\blook at\b', r'\btake a look\b',
-            r'\bget it\b', r'\bmake sense\b', r'\bgo ahead\b'
-        ]
-    
-    def _load_academic_phrases(self) -> List[str]:
-        """Load common academic phrases that indicate good style."""
-        return [
-            r'\bin order to\b', r'\bwith respect to\b', r'\bwith regard to\b',
-            r'\bin terms of\b', r'\bin accordance with\b', r'\bsubsequent to\b',
-            r'\bprior to\b', r'\bin conjunction with\b', r'\bby means of\b'
-        ]
-    
-    def analyze(self, text: str, context: Optional[Dict[str, Any]] = None) -> List[LinguisticError]:
-        """Analyze text for style and formality issues."""
-        errors = []
-        
-        # Check for informal language
-        errors.extend(self._check_informal_language(text))
-        
-        # Check for inappropriate contractions
-        errors.extend(self._check_contractions(text))
-        
-        # Check for appropriate passive voice usage
-        errors.extend(self._check_passive_voice(text))
-        
-        return errors
-    
-    def _check_informal_language(self, text: str) -> List[LinguisticError]:
-        """Check for informal language patterns."""
-        errors = []
-        
-        for pattern in self.informal_patterns:
-            for match in re.finditer(pattern, text, re.IGNORECASE):
-                error = LinguisticError(
-                    error_type=ErrorType.STYLE,
-                    text=match.group(),
-                    start_pos=match.start(),
-                    end_pos=match.end(),
-                    severity=0.6,
-                    explanation="Informal language detected in academic context"
-                )
-                errors.append(error)
-        
-        return errors
-    
-    def _check_contractions(self, text: str) -> List[LinguisticError]:
-        """Check for inappropriate contractions in academic writing."""
-        errors = []
-        
-        contractions = [
-            r"\bdon't\b", r"\bdoesn't\b", r"\bdidn't\b", r"\bwon't\b",
-            r"\bcan't\b", r"\bcouldn't\b", r"\bshouldn't\b", r"\bwouldn't\b",
-            r"\bit's\b", r"\bthat's\b", r"\bthere's\b", r"\bhere's\b"
-        ]
-        
-        for pattern in contractions:
-            for match in re.finditer(pattern, text, re.IGNORECASE):
-                error = LinguisticError(
-                    error_type=ErrorType.STYLE,
-                    text=match.group(),
-                    start_pos=match.start(),
-                    end_pos=match.end(),
-                    severity=0.5,
-                    explanation="Contractions are generally avoided in formal academic writing"
-                )
-                errors.append(error)
-        
-        return errors
-    
-    def _check_passive_voice(self, text: str) -> List[LinguisticError]:
-        """Check for appropriate use of passive voice in academic writing."""
-        # This is more nuanced - passive voice is often appropriate in academic writing
-        # We'll check for excessive use rather than flagging all instances
-        
-        passive_patterns = [
-            r'\bis\s+\w+ed\b', r'\bwas\s+\w+ed\b', r'\bwere\s+\w+ed\b',
-            r'\bhas\s+been\s+\w+ed\b', r'\bhave\s+been\s+\w+ed\b'
-        ]
-        
-        passive_count = sum(len(re.findall(pattern, text)) for pattern in passive_patterns)
-        total_sentences = len(re.split(r'[.!?]+', text))
-        
-        # Flag if more than 70% of sentences use passive voice (might be excessive)
-        if total_sentences > 0 and passive_count / total_sentences > 0.7:
-            return [LinguisticError(
-                error_type=ErrorType.STYLE,
-                text="[Multiple instances]",
-                start_pos=0,
-                end_pos=len(text),
-                severity=0.3,
-                explanation="Excessive use of passive voice. Consider using active voice where appropriate."
-            )]
-        
-        return []
-
-
-class ReadabilityAnalyzer:
-    """Analyzes text readability and complexity."""
-    
-    def __init__(self):
-        self.logger = logging.getLogger(self.__class__.__name__)
-    
-    def analyze_readability(self, text: str) -> Dict[str, float]:
-        """Analyze readability metrics."""
-        if not TEXTSTAT_AVAILABLE or not text:
-            return {"flesch_reading_ease": 0.0, "flesch_kincaid_grade": 0.0}
-        
-        try:
-            return {
-                "flesch_reading_ease": textstat.flesch_reading_ease(text),
-                "flesch_kincaid_grade": textstat.flesch_kincaid_grade(text),
-                "gunning_fog": textstat.gunning_fog(text),
-                "automated_readability_index": textstat.automated_readability_index(text)
-            }
-        except Exception as e:
-            self.logger.warning(f"Error calculating readability metrics: {e}")
-            return {"flesch_reading_ease": 0.0, "flesch_kincaid_grade": 0.0}
 
 
 class LinguisticAnalyzer:
     """Main orchestrator for linguistic quality analysis."""
     
+    # Academic vocabulary to whitelist
+    ACADEMIC_WORDS = {
+        'algorithm', 'analysis', 'application', 'approach', 'dataset',
+        'evaluation', 'experiment', 'framework', 'implementation', 'methodology',
+        'optimization', 'parameter', 'performance', 'validation', 'visualization',
+        'neural', 'computational', 'statistical', 'empirical', 'theoretical'
+    }
+    
+    # Common typos mapping
+    COMMON_TYPOS = {
+        r'\bteh\b': 'the',
+        r'\badn\b': 'and',
+        r'\brecieve\b': 'receive',
+        r'\boccured\b': 'occurred',
+        r'\bseperate\b': 'separate',
+        r'\bdefinately\b': 'definitely',
+        r'\benviroment\b': 'environment',
+        r'\bexperiement\b': 'experiment'
+    }
+    
+    # Informal patterns to avoid
+    INFORMAL_PATTERNS = [
+        r'\bawesome\b', r'\bcool\b', r'\bnice\b', r'\blots of\b',
+        r'\bpretty much\b', r'\bkind of\b', r'\bsort of\b'
+    ]
+    
+    # Contractions to avoid in formal writing
+    CONTRACTIONS = [
+        r"\bdon't\b", r"\bdoesn't\b", r"\bdidn't\b", r"\bwon't\b",
+        r"\bcan't\b", r"\bcouldn't\b", r"\bit's\b", r"\bthat's\b"
+    ]
+    
+    # Terminology variations to check for consistency
+    TERM_VARIATIONS = {
+        'dataset': {'data set', 'data-set'},
+        'machine learning': {'ml', 'machine-learning'},
+        'neural network': {'neural networks', 'neural-network'},
+        'deep learning': {'dl', 'deep-learning'}
+    }
+    
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.logger = logging.getLogger(self.__class__.__name__)
+        self._init_spell_checker()
+        self._init_nlp()
         
-        # Initialize analyzers
-        self.orthographic_analyzer = OrthographicAnalyzer(config)
-        self.grammar_analyzer = GrammarAnalyzer(config)
-        self.terminology_analyzer = TerminologyAnalyzer(config)
-        self.style_analyzer = StyleAnalyzer(config)
-        self.readability_analyzer = ReadabilityAnalyzer()
-        
-        # Initialize preprocessor
-        self.preprocessor = Preprocessor()
+    def _init_spell_checker(self):
+        """Initialize spell checker if available."""
+        self.spell_checker = None
+        if SPELLCHECKER_AVAILABLE:
+            try:
+                self.spell_checker = SpellChecker(language='en')
+                self.spell_checker.word_frequency.load_words(self.ACADEMIC_WORDS)
+            except Exception as e:
+                self.logger.warning(f"Spell checker init failed: {e}")
+    
+    def _init_nlp(self):
+        """Initialize spaCy if available."""
+        self.nlp = None
+        if SPACY_AVAILABLE:
+            try:
+                self.nlp = spacy.load("en_core_web_sm", disable=['ner', 'textcat'])
+                self.logger.info("spaCy loaded successfully")
+            except Exception as e:
+                self.logger.warning(f"spaCy load failed: {e}")
     
     def analyze(self, paper) -> Dict[str, Any]:
         """
-        Perform comprehensive linguistic analysis of the paper.
+        Perform comprehensive linguistic analysis.
         
         Args:
-            paper: Paper object containing the text to analyze
+            paper: Paper object containing text
             
         Returns:
-            Dict containing analysis results
+            Dict with score, feedback, and analysis details
         """
         if not paper or not paper.full_text:
             return self._create_empty_result()
         
-        # Preprocess text
-        text = self.preprocessor.clean_and_normalize(paper.full_text)
+        text = self._clean_text(paper.full_text)
         
-        # Detect language
-        detected_language = self.preprocessor.detect_language(text)
+        # Limit analysis to reasonable length to avoid performance issues
+        max_length = 50000  # ~50k characters
+        if len(text) > max_length:
+            self.logger.info(f"Text truncated from {len(text)} to {max_length} chars")
+            text = text[:max_length]
         
-        # Analyze different aspects
-        all_errors = []
+        # Collect all errors
+        errors = []
         
-        # Orthographic analysis
-        orthographic_errors = self.orthographic_analyzer.analyze(text)
-        all_errors.extend(orthographic_errors)
-        
-        # Grammar analysis
-        grammar_errors = self.grammar_analyzer.analyze(text)
-        all_errors.extend(grammar_errors)
-        
-        # Terminology analysis
-        terminology_errors = self.terminology_analyzer.analyze(text, {"paper": paper})
-        all_errors.extend(terminology_errors)
-        
-        # Style analysis
-        style_errors = self.style_analyzer.analyze(text)
-        all_errors.extend(style_errors)
+        try:
+            # Spelling analysis
+            errors.extend(self._check_spelling(text))
+            
+            # Grammar analysis
+            errors.extend(self._check_grammar(text))
+            
+            # Style analysis
+            errors.extend(self._check_style(text))
+            
+            # Terminology consistency
+            errors.extend(self._check_terminology(text))
+            
+        except Exception as e:
+            self.logger.error(f"Error during analysis: {e}")
+            return self._create_error_result(str(e))
         
         # Calculate scores
-        overall_score = self._calculate_overall_score(all_errors, text)
-        
-        # Analyze readability
-        readability_metrics = self.readability_analyzer.analyze_readability(text)
-        
-        # Analyze by sections if available
-        section_analyses = []
-        if hasattr(paper, 'sections') and paper.sections:
-            for section in paper.sections:
-                if section.content:
-                    section_text = self.preprocessor.clean_and_normalize(section.content)
-                    section_errors = self._analyze_section(section_text)
-                    section_analysis = SectionAnalysis(
-                        section_name=section.title,
-                        text=section_text,
-                        errors=section_errors,
-                        readability_score=readability_metrics.get("flesch_reading_ease", 0.0),
-                        formality_score=self._calculate_formality_score(section_text),
-                        terminology_consistency=self._calculate_terminology_consistency(section_text)
-                    )
-                    section_analyses.append(section_analysis)
-        
-        # Generate detailed feedback
-        feedback = self._generate_comprehensive_feedback(all_errors, readability_metrics, detected_language)
+        score = self._calculate_score(errors, text)
+        feedback = self._generate_feedback(errors, text)
         
         return {
             "pillar_name": "Linguistic Quality",
-            "score": overall_score,
+            "score": score,
             "feedback": feedback,
-            "detailed_analysis": {
-                "total_errors": len(all_errors),
-                "error_types": self._categorize_errors(all_errors),
-                "readability_metrics": readability_metrics,
-                "detected_language": detected_language,
-                "section_analyses": [
-                    {
-                        "section_name": sa.section_name,
-                        "error_count": len(sa.errors),
-                        "readability_score": sa.readability_score,
-                        "formality_score": sa.formality_score,
-                        "terminology_consistency": sa.terminology_consistency
-                    } for sa in section_analyses
-                ],
-                "specific_errors": [
-                    {
-                        "type": error.error_type.value,
-                        "text": error.text,
-                        "severity": error.severity,
-                        "suggestion": error.suggested_correction,
-                        "explanation": error.explanation
-                    } for error in all_errors[:20]  # Limit to top 20 errors
-                ]
-            }
+            "total_errors": len(errors),
+            "error_breakdown": self._categorize_errors(errors),
+            "readability": self._analyze_readability(text)
         }
     
-    def _analyze_section(self, section_text: str) -> List[LinguisticError]:
-        """Analyze a single section of the paper."""
+    def _clean_text(self, text: str) -> str:
+        """Clean and normalize text."""
+        if not text:
+            return ""
+        
+        # Fix common encoding issues
+        replacements = {
+            '\u2019': "'", '\u2018': "'",
+            '\u201c': '"', '\u201d': '"',
+            '\u2013': '-', '\u2014': '--'
+        }
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        
+        # Normalize whitespace
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+    
+    def _check_spelling(self, text: str) -> List[LinguisticError]:
+        """Check for spelling errors - OPTIMIZED."""
         errors = []
-        errors.extend(self.orthographic_analyzer.analyze(section_text))
-        errors.extend(self.grammar_analyzer.analyze(section_text))
-        errors.extend(self.style_analyzer.analyze(section_text))
+        
+        # First check common typos (fast)
+        for pattern, correction in self.COMMON_TYPOS.items():
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                errors.append(LinguisticError(
+                    error_type=ErrorType.SPELLING,
+                    text=match.group(),
+                    severity=0.8,
+                    suggestion=correction,
+                    explanation=f"Common typo: '{match.group()}'"
+                ))
+        
+        # Then use spell checker if available
+        if self.spell_checker and len(text) < 30000:  # Only for shorter texts
+            try:
+                # Extract unique words efficiently
+                words = set(re.findall(r'\b[a-z]{3,15}\b', text.lower()))
+                
+                # Filter out academic words and proper nouns
+                words_to_check = {w for w in words 
+                                 if w not in self.ACADEMIC_WORDS 
+                                 and not w[0].isupper()}
+                
+                # Limit to 100 most suspicious words to avoid long processing
+                words_to_check = list(words_to_check)[:100]
+                
+                # Check spelling in batch
+                misspelled = self.spell_checker.unknown(words_to_check)
+                
+                # Add errors (limit to first 20 occurrences)
+                for word in list(misspelled)[:20]:
+                    correction = self.spell_checker.correction(word)
+                    errors.append(LinguisticError(
+                        error_type=ErrorType.SPELLING,
+                        text=word,
+                        severity=0.6,
+                        suggestion=correction,
+                        explanation=f"Possible spelling error"
+                    ))
+            except Exception as e:
+                self.logger.debug(f"Spell check error: {e}")
+        
         return errors
     
-    def _calculate_overall_score(self, errors: List[LinguisticError], text: str) -> float:
+    def _check_grammar(self, text: str) -> List[LinguisticError]:
+        """Check for grammar issues."""
+        errors = []
+        
+        # Basic punctuation checks
+        # Double spaces
+        for match in re.finditer(r'  +', text):
+            errors.append(LinguisticError(
+                error_type=ErrorType.PUNCTUATION,
+                text="[double space]",
+                severity=0.3,
+                suggestion=" ",
+                explanation="Extra whitespace"
+            ))
+        
+        # Missing space after punctuation
+        for match in re.finditer(r'[.!?,][A-Za-z]', text):
+            errors.append(LinguisticError(
+                error_type=ErrorType.PUNCTUATION,
+                text=match.group(),
+                severity=0.5,
+                explanation="Missing space after punctuation"
+            ))
+        
+        # Lowercase after period
+        for match in re.finditer(r'\.\s+[a-z]', text):
+            errors.append(LinguisticError(
+                error_type=ErrorType.GRAMMAR,
+                text=match.group(),
+                severity=0.6,
+                explanation="Sentence should start with capital"
+            ))
+        
+        # Advanced grammar with spaCy (if available)
+        if self.nlp and len(text) < 20000:
+            try:
+                doc = self.nlp(text[:20000])  # Limit for performance
+                
+                # Check for very short sentences (fragments)
+                for sent in doc.sents:
+                    words = [t for t in sent if not t.is_punct and not t.is_space]
+                    if len(words) < 3 and len(sent.text) > 10:
+                        errors.append(LinguisticError(
+                            error_type=ErrorType.GRAMMAR,
+                            text=sent.text[:50],
+                            severity=0.4,
+                            explanation="Possible sentence fragment"
+                        ))
+            except Exception as e:
+                self.logger.debug(f"spaCy grammar check error: {e}")
+        
+        return errors
+    
+    def _check_style(self, text: str) -> List[LinguisticError]:
+        """Check for style issues."""
+        errors = []
+        
+        # Informal language
+        for pattern in self.INFORMAL_PATTERNS:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                errors.append(LinguisticError(
+                    error_type=ErrorType.STYLE,
+                    text=match.group(),
+                    severity=0.5,
+                    explanation="Informal language in academic context"
+                ))
+        
+        # Contractions
+        for pattern in self.CONTRACTIONS:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                errors.append(LinguisticError(
+                    error_type=ErrorType.STYLE,
+                    text=match.group(),
+                    severity=0.4,
+                    explanation="Avoid contractions in formal writing"
+                ))
+        
+        # Check passive voice density
+        passive_patterns = [
+            r'\bis\s+\w+ed\b', r'\bwas\s+\w+ed\b', 
+            r'\bwere\s+\w+ed\b', r'\bhas\s+been\s+\w+ed\b'
+        ]
+        passive_count = sum(len(re.findall(p, text)) for p in passive_patterns)
+        sentences = len(re.split(r'[.!?]+', text))
+        
+        if sentences > 0 and passive_count / sentences > 0.7:
+            errors.append(LinguisticError(
+                error_type=ErrorType.STYLE,
+                text="[document-wide]",
+                severity=0.3,
+                explanation="Very high use of passive voice"
+            ))
+        
+        return errors
+    
+    def _check_terminology(self, text: str) -> List[LinguisticError]:
+        """Check terminology consistency."""
+        errors = []
+        
+        for canonical, variations in self.TERM_VARIATIONS.items():
+            all_forms = variations | {canonical}
+            found_forms = set()
+            
+            for form in all_forms:
+                if re.search(r'\b' + re.escape(form) + r'\b', text, re.IGNORECASE):
+                    found_forms.add(form)
+            
+            # If multiple forms used, flag inconsistency
+            if len(found_forms) > 1:
+                errors.append(LinguisticError(
+                    error_type=ErrorType.TERMINOLOGY,
+                    text=f"{canonical} variations",
+                    severity=0.6,
+                    suggestion=canonical,
+                    explanation=f"Inconsistent use: {', '.join(found_forms)}"
+                ))
+        
+        return errors
+    
+    def _analyze_readability(self, text: str) -> Dict[str, float]:
+        """Calculate readability metrics."""
+        if not TEXTSTAT_AVAILABLE or not text:
+            return {}
+        
+        try:
+            return {
+                "flesch_reading_ease": textstat.flesch_reading_ease(text),
+                "flesch_kincaid_grade": textstat.flesch_kincaid_grade(text)
+            }
+        except Exception as e:
+            self.logger.debug(f"Readability calculation error: {e}")
+            return {}
+    
+    def _calculate_score(self, errors: List[LinguisticError], text: str) -> float:
         """Calculate overall linguistic quality score."""
         if not text:
             return 0.0
         
-        # Base score starts at 1.0
+        # Start with perfect score
         score = 1.0
         
-        # Deduct points based on error severity and frequency
-        total_error_impact = sum(error.severity for error in errors)
-        text_length = len(text.split())  # Word count
+        # Calculate error impact
+        word_count = len(text.split())
+        if word_count == 0:
+            return 0.0
         
-        # Normalize error impact by text length
-        if text_length > 0:
-            normalized_impact = total_error_impact / (text_length / 100)  # Errors per 100 words
-            score -= min(0.8, normalized_impact * 0.1)  # Cap maximum deduction at 0.8
+        # Weight errors by severity
+        total_severity = sum(e.severity for e in errors)
         
-        # Bonus for good readability (academic papers should be moderately complex)
+        # Normalize by text length (per 100 words)
+        normalized_impact = (total_severity / (word_count / 100)) * 0.1
+        
+        # Deduct from score
+        score -= min(0.85, normalized_impact)
+        
+        # Small bonus for good readability
         if TEXTSTAT_AVAILABLE:
             try:
                 reading_ease = textstat.flesch_reading_ease(text)
-                if 20 <= reading_ease <= 60:  # Good range for academic papers
-                    score = min(1.0, score + 0.1)
+                if 20 <= reading_ease <= 60:  # Good for academic
+                    score = min(1.0, score + 0.05)
             except Exception:
                 pass
         
         return max(0.0, score)
     
-    def _calculate_formality_score(self, text: str) -> float:
-        """Calculate formality score based on style indicators."""
-        if not text:
-            return 0.0
-        
-        formal_indicators = len(re.findall(r'\bin order to\b|\bwith respect to\b|\baccordingly\b', text, re.IGNORECASE))
-        informal_indicators = len(re.findall(r'\bawesome\b|\bcool\b|\bnice\b', text, re.IGNORECASE))
-        contractions = len(re.findall(r"\b\w+'t\b|\b\w+'s\b", text))
-        
-        word_count = len(text.split())
-        if word_count == 0:
-            return 0.0
-        
-        formality_score = (formal_indicators - informal_indicators - contractions * 0.5) / (word_count / 100)
-        return max(0.0, min(1.0, (formality_score + 2) / 4))  # Normalize to 0-1 range
-    
-    def _calculate_terminology_consistency(self, text: str) -> float:
-        """Calculate terminology consistency score."""
-        if not text:
-            return 1.0
-        
-        # This would be enhanced with the terminology analyzer results
-        # For now, return a basic score based on term variation patterns
-        inconsistencies = self.terminology_analyzer.analyze(text)
-        error_count = len(inconsistencies)
-        word_count = len(text.split())
-        
-        if word_count == 0:
-            return 1.0
-        
-        consistency_score = max(0.0, 1.0 - (error_count / (word_count / 200)))
-        return consistency_score
-    
     def _categorize_errors(self, errors: List[LinguisticError]) -> Dict[str, int]:
-        """Categorize errors by type."""
-        categories = {}
+        """Count errors by type."""
+        categories = defaultdict(int)
         for error in errors:
-            error_type = error.error_type.value
-            categories[error_type] = categories.get(error_type, 0) + 1
-        return categories
+            categories[error.error_type.value] += 1
+        return dict(categories)
     
-    def _generate_comprehensive_feedback(self, errors: List[LinguisticError], 
-                                       readability_metrics: Dict[str, float],
-                                       detected_language: str) -> str:
-        """Generate comprehensive feedback based on analysis."""
-        feedback_parts = []
-        
+    def _generate_feedback(self, errors: List[LinguisticError], text: str) -> str:
+        """Generate human-readable feedback."""
         if not errors:
-            feedback_parts.append("Excellent linguistic quality with no significant errors detected.")
-        else:
-            error_categories = self._categorize_errors(errors)
-            
-            if ErrorType.SPELLING.value in error_categories:
-                count = error_categories[ErrorType.SPELLING.value]
-                feedback_parts.append(f"Found {count} spelling error{'s' if count > 1 else ''}. Consider thorough proofreading.")
-            
-            if ErrorType.GRAMMAR.value in error_categories:
-                count = error_categories[ErrorType.GRAMMAR.value]
-                feedback_parts.append(f"Detected {count} grammar issue{'s' if count > 1 else ''}. Review sentence structure and syntax.")
-            
-            if ErrorType.TERMINOLOGY.value in error_categories:
-                count = error_categories[ErrorType.TERMINOLOGY.value]
-                feedback_parts.append(f"Found {count} terminology inconsistency{'ies' if count > 1 else ''}. Ensure consistent use of technical terms.")
-            
-            if ErrorType.STYLE.value in error_categories:
-                count = error_categories[ErrorType.STYLE.value]
-                feedback_parts.append(f"Identified {count} style issue{'s' if count > 1 else ''}. Maintain formal academic tone throughout.")
+            return "Excellent linguistic quality with no significant issues detected."
         
-        # Add readability feedback
-        if readability_metrics:
-            reading_ease = readability_metrics.get("flesch_reading_ease", 0)
-            if reading_ease > 70:
-                feedback_parts.append("Text may be too simple for academic audience. Consider more sophisticated vocabulary.")
-            elif reading_ease < 20:
-                feedback_parts.append("Text may be overly complex. Consider simplifying some sentences for better readability.")
+        parts = []
+        error_cats = self._categorize_errors(errors)
         
-        # Add language detection feedback
-        if detected_language not in ["en", "unknown"]:
-            feedback_parts.append(f"Primary language detected as {detected_language}. Ensure English formatting and style guidelines are followed.")
+        # Spelling feedback
+        if 'spelling' in error_cats:
+            count = error_cats['spelling']
+            parts.append(f"Found {count} spelling issue{'s' if count > 1 else ''}. "
+                        "Thorough proofreading recommended.")
         
-        return " ".join(feedback_parts) if feedback_parts else "Good linguistic quality overall."
+        # Grammar feedback
+        if 'grammar' in error_cats:
+            count = error_cats['grammar']
+            parts.append(f"Detected {count} grammar/punctuation issue{'s' if count > 1 else ''}. "
+                        "Review sentence structure.")
+        
+        # Style feedback
+        if 'style' in error_cats:
+            count = error_cats['style']
+            parts.append(f"Found {count} style issue{'s' if count > 1 else ''}. "
+                        "Maintain formal academic tone.")
+        
+        # Terminology feedback
+        if 'terminology' in error_cats:
+            count = error_cats['terminology']
+            parts.append(f"Detected {count} terminology inconsistency{'ies' if count > 1 else ''}. "
+                        "Use technical terms consistently.")
+        
+        # Readability feedback
+        if TEXTSTAT_AVAILABLE and text:
+            try:
+                ease = textstat.flesch_reading_ease(text)
+                if ease > 70:
+                    parts.append("Text may be too simple for academic audience.")
+                elif ease < 20:
+                    parts.append("Text complexity is very high; consider simplifying.")
+            except Exception:
+                pass
+        
+        return " ".join(parts) if parts else "Minor issues detected. Overall quality is good."
     
     def _create_empty_result(self) -> Dict[str, Any]:
-        """Create empty result for papers with no text."""
+        """Create result for empty papers."""
         return {
             "pillar_name": "Linguistic Quality",
             "score": 0.0,
-            "feedback": "No text available for linguistic analysis.",
-            "detailed_analysis": {
-                "total_errors": 0,
-                "error_types": {},
-                "readability_metrics": {},
-                "detected_language": "unknown"
-            }
+            "feedback": "No text available for analysis.",
+            "total_errors": 0,
+            "error_breakdown": {},
+            "readability": {}
+        }
+    
+    def _create_error_result(self, error_msg: str) -> Dict[str, Any]:
+        """Create result when analysis fails."""
+        return {
+            "pillar_name": "Linguistic Quality",
+            "score": 0.5,
+            "feedback": f"Analysis encountered errors: {error_msg}. Partial results only.",
+            "total_errors": 0,
+            "error_breakdown": {},
+            "readability": {}
         }
 
 
-# Main evaluation function (maintains compatibility with existing system)
 def evaluate(paper) -> dict:
     """
-    Evaluate linguistic quality of the paper.
+    Main evaluation function for compatibility with existing system.
     
     Args:
         paper: Paper object with text content
         
     Returns:
         dict: Score and feedback for linguistic quality
-        
-    This function maintains compatibility with the existing evaluation system
-    while providing enhanced linguistic analysis capabilities.
     """
     analyzer = LinguisticAnalyzer()
-    result = analyzer.analyze(paper)
-    
-    # Convert to PillarResult format for compatibility
-    return PillarResult(
-        pillar_name=result["pillar_name"],
-        score=result["score"],
-        feedback=result["feedback"],
-        gpt_analysis_data=result.get("detailed_analysis")
-    ).__dict__
+    return analyzer.analyze(paper)
