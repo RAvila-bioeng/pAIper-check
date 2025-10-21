@@ -6,7 +6,8 @@ nltk
 PyPDF2
 pyyaml
 pandas
-sentence-transformers torch
+sentence-transformers 
+torch
 spacy>=3.7.0
 textstat>=0.7.3
 pyspellchecker>=0.6.2
