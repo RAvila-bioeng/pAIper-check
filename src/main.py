@@ -157,9 +157,22 @@ def process_single_paper(input_path, args):
     logger.info("Evaluating references...")
     results["references"] = check_references.evaluate(paper)
     
-    # Quality evaluation
+    # Quality evaluation (with optional GPT)
     logger.info("Evaluating scientific quality...")
-    results["quality"] = check_quality.evaluate(paper)
+    if args.use_chatgpt:
+        logger.info("  → GPT-4o-mini deep analysis enabled")
+        results["quality"] = check_quality.evaluate(paper, use_gpt=True)
+        
+        # Check if GPT was actually used
+        gpt_info = results["quality"].get("gpt_analysis", {})
+        if gpt_info.get("used"):
+            cost = gpt_info.get("cost_info", {}).get("cost_usd", 0)
+            logger.info(f"  → GPT analysis performed (cost: ${cost:.4f})")
+        else:
+            reason = gpt_info.get("reason", "Unknown")
+            logger.info(f"  → GPT analysis skipped: {reason}")
+    else:
+        results["quality"] = check_quality.evaluate(paper, use_gpt=False)
     
     # Calculate overall score
     weights = config.get_evaluation_weights()
