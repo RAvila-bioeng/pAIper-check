@@ -1,20 +1,56 @@
-import pdfplumber
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
+from PyPDF2 import PdfReader
 from models.paper import Paper, Section, Reference
 
 
 def extract_text_from_pdf(file_path: str) -> str:
     """
-    Extracts all text from a PDF file.
+    Extracts all text from a PDF file using PyPDF2.
     Returns a single concatenated string.
     """
     text = ""
-    with pdfplumber.open(file_path) as pdf:
-        for page in pdf.pages:
-            text += page.extract_text() + "\n"
+    try:
+        reader = PdfReader(file_path)
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+    except Exception as e:
+        print(f"Error reading PDF with PyPDF2: {e}")
+        try:
+            import pdfplumber
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+        except ImportError:
+            print("pdfplumber is not installed. Cannot fallback.")
+        except Exception as pl_e:
+            print(f"Fallback to pdfplumber also failed: {pl_e}")
+    
     return text.strip()
+
+
+def clean_text(text: str) -> str:
+    """
+    Clean extracted text by fixing common PDF extraction issues.
+    """
+    # Remove excessive whitespace but preserve paragraph breaks
+    text = re.sub(r' +', ' ', text)
+    
+    # Fix broken words at line endings (hyphenation)
+    text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
+    
+    # Fix line breaks within sentences (but keep paragraph breaks)
+    text = re.sub(r'(?<![.!?:])\n(?=[a-z])', ' ', text)
+    
+    # Normalize multiple newlines to double newline (paragraph break)
+    text = re.sub(r'\n\s*\n+', '\n\n', text)
+    
+    return text
 
 
 def parse_paper_from_pdf(file_path: str) -> Paper:
@@ -32,20 +68,23 @@ def parse_paper_from_pdf(file_path: str) -> Paper:
     else:
         raise ValueError(f"Unsupported file format: {file_extension}")
     
-    # Extract title (usually the first non-empty line)
-    title = extract_title(raw_text)
+    # Clean the text
+    cleaned_text = clean_text(raw_text)
+    
+    # Extract title
+    title = extract_title(cleaned_text)
     
     # Extract abstract
-    abstract = extract_abstract(raw_text)
+    abstract = extract_abstract(cleaned_text)
     
     # Extract sections
-    sections = extract_sections(raw_text)
+    sections = extract_sections(cleaned_text)
     
     # Extract references
-    references = extract_references(raw_text)
+    references = extract_references(cleaned_text)
     
     return Paper(
-        raw_text=raw_text,
+        raw_text=cleaned_text,
         title=title,
         abstract=abstract,
         sections=sections,
@@ -55,87 +94,212 @@ def parse_paper_from_pdf(file_path: str) -> Paper:
 
 def extract_title(text: str) -> str:
     """Extract the title from the paper text."""
-    lines = text.split('\n')
-    for line in lines[:10]:  # Check first 10 lines
-        line = line.strip()
-        if len(line) > 10 and len(line) < 200:  # Reasonable title length
-            # Skip common headers
-            if not any(header in line.lower() for header in ['abstract', 'introduction', 'method', 'result']):
-                return line
-    return ""
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    
+    # Skip common headers that appear before title
+    skip_keywords = ['journal', 'volume', 'article', 'doi', 'received', 'accepted']
+    
+    for i, line in enumerate(lines[:20]):
+        # Skip very short lines or lines with skip keywords
+        if len(line) < 15 or any(kw in line.lower() for kw in skip_keywords):
+            continue
+        
+        # Skip lines that look like author names (contain common name patterns)
+        if re.search(r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b', line) and len(line) < 50:
+            continue
+        
+        # Skip lines with emails or affiliations
+        if '@' in line or re.search(r'\d{5}', line):
+            continue
+        
+        # Title should be substantial and not all caps (unless it's a proper title)
+        if 20 <= len(line) <= 250:
+            return line
+    
+    return lines[0] if lines else ""
 
 
 def extract_abstract(text: str) -> str:
-    """Extract the abstract section."""
-    # Look for abstract section
-    abstract_patterns = [
-        r'abstract\s*[:\-]?\s*(.*?)(?=keywords|introduction|1\.|i\.|$)',
-        r'resumen\s*[:\-]?\s*(.*?)(?=palabras clave|introducción|1\.|i\.|$)',
-        r'abstract\s*[:\-]?\s*(.*?)(?=introduction|1\.|i\.|$)',
+    """Extract the abstract section with improved pattern matching."""
+    # Multiple patterns to catch different abstract formats
+    patterns = [
+        # Standard format with "abstract" header
+        r'(?:^|\n)\s*abstract\s*\n+(.*?)(?=\n\s*(?:keywords?|introduction|1\.?\s+introduction|\d+\.?\s+\w+|$))',
+        
+        # Abstract with colon or dash
+        r'(?:^|\n)\s*abstract\s*[:\-]\s*(.*?)(?=\n\s*(?:keywords?|introduction|1\.?\s+introduction|$))',
+        
+        # Abstract in other languages
+        r'(?:^|\n)\s*(?:resumen|résumé)\s*[:\-]?\s*(.*?)(?=\n\s*(?:keywords?|palabras clave|introduction|$))',
     ]
     
-    for pattern in abstract_patterns:
-        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+    for pattern in patterns:
+        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE | re.MULTILINE)
         if match:
             abstract = match.group(1).strip()
             # Clean up the abstract
             abstract = re.sub(r'\s+', ' ', abstract)
-            return abstract[:1000]  # Limit abstract length
+            # Remove common artifacts
+            abstract = re.sub(r'\b(?:keywords?|introduction)\b.*$', '', abstract, flags=re.IGNORECASE)
+            
+            if len(abstract) > 50:  # Ensure it's substantial
+                return abstract[:2000]
     
     return ""
 
 
-def extract_sections(text: str) -> List[Section]:
-    """Extract main sections from the paper."""
-    sections = []
+def find_section_headers(text: str) -> List[tuple]:
+    """
+    Find all section headers in the text with their positions.
+    Returns list of (position, header_text, header_type) tuples.
+    """
+    headers = []
     
-    # Common section patterns
+    # Common section patterns in scientific papers
     section_patterns = [
-        r'(introduction|introducción)\s*[:\-]?\s*(.*?)(?=method|methodology|método|metodología|result|resultado|conclusion|conclusión|discussion|discusión|$)',
-        r'(methodology|methods|método|metodología)\s*[:\-]?\s*(.*?)(?=result|resultado|conclusion|conclusión|discussion|discusión|$)',
-        r'(results|resultados)\s*[:\-]?\s*(.*?)(?=conclusion|conclusión|discussion|discusión|$)',
-        r'(discussion|discusión)\s*[:\-]?\s*(.*?)(?=conclusion|conclusión|$)',
-        r'(conclusion|conclusiones|conclusión|conclusiones)\s*[:\-]?\s*(.*?)(?=references|referencias|bibliography|bibliografía|$)',
+        # Numbered sections: "1. Introduction" or "1 Introduction"
+        (r'\n\s*(\d+\.?\s+[A-Z][a-zA-Z\s]+)\s*\n', 'numbered'),
+        
+        # All caps headers: "INTRODUCTION"
+        (r'\n\s*([A-Z][A-Z\s]{5,50})\s*\n', 'caps'),
+        
+        # Standard headers: "Introduction"
+        (r'\n\s*([A-Z][a-z]+(?:\s+(?:and|&|of|for|the)\s+[A-Z][a-z]+)*)\s*\n', 'standard'),
     ]
     
-    for pattern in section_patterns:
-        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
-        if match:
-            section_title = match.group(1).strip()
-            section_content = match.group(2).strip()
-            # Clean up content
-            section_content = re.sub(r'\s+', ' ', section_content)
-            if len(section_content) > 50:  # Only add substantial sections
-                sections.append(Section(title=section_title, content=section_content))
+    for pattern, header_type in section_patterns:
+        for match in re.finditer(pattern, text):
+            header_text = match.group(1).strip()
+            
+            # Filter out false positives
+            if len(header_text.split()) > 8:  # Too long for a header
+                continue
+            if header_text.lower() in ['a b s t r a c t', 'the', 'this', 'these']:
+                continue
+                
+            headers.append((match.start(), header_text, header_type))
+    
+    # Sort by position and remove duplicates
+    headers.sort(key=lambda x: x[0])
+    
+    # Remove overlapping headers (keep the first one)
+    cleaned_headers = []
+    last_pos = -100
+    for pos, header, htype in headers:
+        if pos - last_pos > 50:  # Minimum distance between headers
+            cleaned_headers.append((pos, header, htype))
+            last_pos = pos
+    
+    return cleaned_headers
+
+
+def extract_sections(text: str) -> List[Section]:
+    """
+    Extract main sections from the paper using improved detection.
+    """
+    sections = []
+    
+    # Find all section headers
+    headers = find_section_headers(text)
+    
+    if not headers:
+        # Fallback to basic extraction if no headers found
+        return extract_sections_fallback(text)
+    
+    # Extract content between headers
+    for i, (pos, header, htype) in enumerate(headers):
+        # Determine end position (next header or end of text)
+        end_pos = headers[i + 1][0] if i + 1 < len(headers) else len(text)
+        
+        # Extract section content
+        content = text[pos:end_pos].strip()
+        
+        # Remove the header from content
+        content = content[len(header):].strip()
+        
+        # Clean up content
+        content = re.sub(r'\s+', ' ', content)
+        
+        # Only add substantial sections
+        if len(content) > 100:
+            # Clean header
+            clean_header = re.sub(r'^\d+\.?\s*', '', header).strip()
+            sections.append(Section(title=clean_header, content=content[:5000]))
+    
+    # If we found very few sections, try fallback method
+    if len(sections) < 3:
+        return extract_sections_fallback(text)
+    
+    return sections
+
+
+def extract_sections_fallback(text: str) -> List[Section]:
+    """
+    Fallback method for section extraction using keyword matching.
+    """
+    sections = []
+    
+    # Key sections to look for
+    section_keywords = {
+        'Introduction': [r'\bintroduction\b', r'\bbackground\b'],
+        'Methods': [r'\bmethods?\b', r'\bmethodology\b', r'\bmaterials?\s+and\s+methods?\b', r'\bexperimental\b'],
+        'Results': [r'\bresults?\b', r'\bfindings?\b'],
+        'Discussion': [r'\bdiscussion\b', r'\banalysis\b'],
+        'Conclusion': [r'\bconclusions?\b', r'\bsummary\b'],
+    }
+    
+    for section_name, patterns in section_keywords.items():
+        for pattern in patterns:
+            # Look for section with flexible matching
+            regex = rf'(?:^|\n)\s*(?:\d+\.?\s*)?{pattern}\s*[:\-]?\s*\n+(.*?)(?=\n\s*(?:\d+\.?\s*)?(?:{"| ".join([p.replace("\\b", "").replace("\\", "") for p in sum(section_keywords.values(), [])])})|$)'
+            
+            match = re.search(regex, text, re.DOTALL | re.IGNORECASE | re.MULTILINE)
+            if match:
+                content = match.group(1).strip()
+                content = re.sub(r'\s+', ' ', content)
+                
+                if len(content) > 100:
+                    sections.append(Section(title=section_name, content=content[:5000]))
+                    break  # Found this section, move to next
     
     return sections
 
 
 def extract_references(text: str) -> List[Reference]:
-    """Extract references from the paper."""
+    """Extract references with improved detection."""
     references = []
     
-    # Look for references section
+    # Find references section
     ref_patterns = [
-        r'(references|referencias|bibliography|bibliografía)\s*[:\-]?\s*(.*?)$',
-        r'(references|referencias|bibliography|bibliografía)\s*[:\-]?\s*(.*?)(?=\n\n|\n\s*\n)',
+        r'(?:^|\n)\s*references?\s*\n+(.*?)$',
+        r'(?:^|\n)\s*bibliography\s*\n+(.*?)$',
+        r'(?:^|\n)\s*(?:referencias|références)\s*\n+(.*?)$',
     ]
     
+    ref_text = None
     for pattern in ref_patterns:
-        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE | re.MULTILINE)
         if match:
-            ref_text = match.group(2).strip()
-            # Split references by common patterns
-            ref_entries = re.split(r'\n(?=\d+\.|\d+\)|\[)', ref_text)
-            
-            for entry in ref_entries:
-                entry = entry.strip()
-                if len(entry) > 20:  # Only substantial references
-                    # Try to extract DOI if present
-                    doi_match = re.search(r'doi[:\s]*([^\s,]+)', entry, re.IGNORECASE)
-                    doi = doi_match.group(1) if doi_match else None
-                    
-                    references.append(Reference(text=entry, doi=doi))
+            ref_text = match.group(1).strip()
             break
+    
+    if not ref_text:
+        return references
+    
+    # Split references by common patterns
+    # Look for: [1], [1], (1), 1., or 1)
+    ref_entries = re.split(r'\n\s*(?:\[\d+\]|\(\d+\)|\d+\.|\d+\))\s+', ref_text)
+    
+    for entry in ref_entries:
+        entry = entry.strip()
+        if len(entry) > 30:  # Only substantial references
+            # Clean up the entry
+            entry = re.sub(r'\s+', ' ', entry)
+            
+            # Try to extract DOI
+            doi_match = re.search(r'(?:doi[:\s]*|https?://doi\.org/)([^\s,;]+)', entry, re.IGNORECASE)
+            doi = doi_match.group(1) if doi_match else None
+            
+            references.append(Reference(text=entry[:500], doi=doi))
     
     return references
