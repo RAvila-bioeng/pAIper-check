@@ -32,8 +32,8 @@ Examples:
   # With GPT-4o-mini deep analysis (recommended)
   python main.py --input paper.pdf --use-chatgpt
   
-  # Force GPT even if score is good
-  python main.py --input paper.pdf --use-chatgpt --force-gpt
+  # Show detailed linguistic errors
+  python main.py --input paper.pdf --show-errors
   
   # Save detailed results to JSON
   python main.py --input paper.pdf --use-chatgpt --output results.json
@@ -54,6 +54,14 @@ Examples:
                        help="Show detailed GPT cost report at the end")
     parser.add_argument("--batch", action="store_true",
                        help="Process multiple papers (use with wildcards)")
+    
+    # NEW: Linguistic error reporting options
+    parser.add_argument("--show-errors", action="store_true",
+                       help="Show detailed linguistic errors with locations")
+    parser.add_argument("--max-errors", type=int, default=30,
+                       help="Maximum number of errors to display (default: 30)")
+    parser.add_argument("--export-errors", 
+                       help="Export linguistic errors to file (JSON, CSV, or HTML)")
     
     args = parser.parse_args()
 
@@ -190,6 +198,7 @@ def process_single_paper(input_path, args):
     # Print results
     print_results(paper, overall_score, results, weights, args)
     
+    
     # Save results if output path specified
     if args.output:
         output_path = Path(args.output)
@@ -266,6 +275,74 @@ def process_batch(paper_files, args):
     return 0 if failed == 0 else 1
 
 
+def print_linguistic_errors(ling_result, max_errors=30):
+    """Print detailed linguistic errors with locations"""
+    
+    errors = ling_result.get('error_details', [])
+    if not errors:
+        print("\n  ✅ No linguistic errors detected!")
+        return
+    
+    total_errors = len(errors)
+    breakdown = ling_result.get('error_breakdown', {})
+    
+    print(f"\n  📋 Linguistic Error Details ({total_errors} total errors):")
+    print(f"  {'─'*66}")
+    
+    # Show breakdown
+    if breakdown:
+        print("\n  Error Types:")
+        for error_type, count in sorted(breakdown.items(), key=lambda x: x[1], reverse=True):
+            emoji = {
+                'spelling': '📝',
+                'grammar': '📖',
+                'punctuation': '❗',
+                'style': '✨',
+                'terminology': '🔤'
+            }.get(error_type, '•')
+            print(f"    {emoji} {error_type.capitalize()}: {count}")
+    
+    # Show first N errors
+    print(f"\n  Showing first {min(max_errors, total_errors)} errors:")
+    print(f"  {'─'*66}")
+    
+    # Group by type for better readability
+    errors_by_type = {}
+    for error in errors[:max_errors]:
+        error_type = error['type']
+        if error_type not in errors_by_type:
+            errors_by_type[error_type] = []
+        errors_by_type[error_type].append(error)
+    
+    # Print grouped errors
+    for error_type, type_errors in sorted(errors_by_type.items()):
+        emoji = {
+            'spelling': '📝',
+            'grammar': '📖',
+            'punctuation': '❗',
+            'style': '✨',
+            'terminology': '🔤'
+        }.get(error_type, '•')
+        
+        print(f"\n  {emoji} {error_type.upper()} ({len(type_errors)} shown)")
+        
+        for i, error in enumerate(type_errors[:10], 1):  # Limit per type to 10
+            severity_emoji = '🔴' if error['severity'] >= 0.7 else '🟡' if error['severity'] >= 0.4 else '🟢'
+            
+            print(f"\n    {i}. {severity_emoji} Line {error['line']}")
+            print(f"       Found: '{error['text']}'")
+            
+            if error.get('suggestion'):
+                print(f"       → Suggest: '{error['suggestion']}'")
+            
+            print(f"       Context: {error['context']}")
+            print(f"       Reason: {error['explanation']}")
+    
+    if total_errors > max_errors:
+        remaining = total_errors - max_errors
+        print(f"\n  ... and {remaining} more errors")
+        print(f"  💡 Use --max-errors {total_errors} to see all errors")
+
 def print_results(paper, overall_score, results, weights, args):
     """Print formatted results"""
     
@@ -320,6 +397,10 @@ def print_results(paper, overall_score, results, weights, args):
             print(f"  {feedback[:500]}...")
         else:
             print(f"  {feedback}")
+        
+        # NEW: Show linguistic errors if requested or if score is very low
+        if pillar == "linguistics" and (args.show_errors or result.get("score", 1.0) < 0.3):
+            print_linguistic_errors(result, args.max_errors)
     
     # Show GPT specific info if used
     if args.use_chatgpt and "cohesion" in results:
@@ -341,7 +422,7 @@ def print_results(paper, overall_score, results, weights, args):
                 if 'sub_modules' in analysis:
                     print("\n  Cohesion Sub-modules:")
                     for name, sub in analysis['sub_modules'].items():
-                        if sub: # Check if sub-module result exists
+                        if sub:
                             print(f"    - {name.replace('_', ' ').title():.<25} {sub.get('score', 0):.2f} - {sub.get('feedback', 'N/A')}")
 
                 issues = analysis.get('issues', [])
@@ -379,6 +460,12 @@ def print_results(paper, overall_score, results, weights, args):
     
     print("\n" + "="*70)
     print("✓ Evaluation complete!")
+    
+    # Hint about error details
+    if "linguistics" in results and results["linguistics"].get("total_errors", 0) > 0:
+        if not args.show_errors:
+            print("\n💡 Tip: Use --show-errors to see detailed linguistic error locations")
+    
     print("="*70 + "\n")
 
 
