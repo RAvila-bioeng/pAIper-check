@@ -21,7 +21,7 @@ except ImportError:
     GPT_AVAILABLE = False
 
 if GPT_AVAILABLE:
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    pass
 
 
 def evaluate(paper, use_gpt: bool = False) -> dict:
@@ -1107,6 +1107,7 @@ if GPT_AVAILABLE:
         """GPT-4o-mini integration for deep scientific quality analysis."""
         
         def __init__(self):
+            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             self.total_cost = 0.0
             self.total_papers = 0
         
@@ -1270,7 +1271,7 @@ if GPT_AVAILABLE:
         def _call_gpt(self, prompt: str, system_prompt: str, max_tokens=400) -> Dict:
             """Make a structured call to the OpenAI API."""
             try:
-                response = client.chat.completions.create(
+                response = self.client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
                         {"role": "system", "content": system_prompt},

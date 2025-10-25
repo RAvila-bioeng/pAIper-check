@@ -15,9 +15,6 @@ from utils.semantic_preprocessor import extract_critical_snippets
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 # Cost tracking constants (per million tokens)
 COST_PER_1M_INPUT = 0.15  # $0.15 per 1M input tokens
 COST_PER_1M_OUTPUT = 0.60  # $0.60 per 1M output tokens
@@ -30,6 +27,7 @@ class GPTCoherenceAnalyzer:
     """
     
     def __init__(self):
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.total_cost = 0.0
         self.total_papers = 0
         self.total_tokens_input = 0
@@ -128,7 +126,7 @@ Do not repeat the draft; provide a new, higher-quality JSON object."""
 
         try:
             # Step 1: Initial Analysis
-            initial_response = client.chat.completions.create(
+            initial_response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -159,7 +157,7 @@ Do not repeat the draft; provide a new, higher-quality JSON object."""
                 "Now, provide your final, refined JSON analysis."
             )
 
-            final_response = client.chat.completions.create(
+            final_response = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": reflection_system_prompt},
