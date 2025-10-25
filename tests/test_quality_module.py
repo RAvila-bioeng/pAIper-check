@@ -274,6 +274,28 @@ class TestScientificQualityModule:
             assert component in detailed_analysis
             assert isinstance(detailed_analysis[component], dict)
 
+    def test_low_novelty_paper(self):
+        """Test novelty analysis on a paper with low novelty."""
+        text = """
+        Title: A Review of Existing Methods
+        
+        Abstract: This paper reviews existing methods in the field. We summarize the current state of the art.
+        
+        Introduction: Many methods exist for this problem. This paper describes them.
+        
+        Methodology: We used a standard literature review methodology.
+        
+        Results: The results are a summary of what is already known.
+        
+        Conclusion: This paper has summarized existing work.
+        """
+        paper = Paper(raw_text=text)
+        score, details = _check_novelty_originality_enhanced(paper.full_text, paper)
+        
+        assert score < 0.6
+        assert details['novelty_indicators_found'] == 0
+        assert details['contribution_statements'] == 0
+
 
 class TestGPTIntegration:
     """Test suite for GPT integration (if available)."""
