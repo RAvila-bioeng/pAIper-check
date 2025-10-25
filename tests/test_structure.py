@@ -57,3 +57,15 @@ def test_structure_short_sections_penalized():
 
     result = check_structure.evaluate(paper)
     assert result["score"] < 1
+
+
+def test_structure_details():
+    text = "Abstract\nIntroduction\nMethods\nResults\nDiscussion\nConclusion\nReferences"
+    paper = Paper(raw_text=text)
+    result = check_structure.evaluate(paper)
+    
+    assert "gpt_analysis_data" in result
+    details = result["gpt_analysis_data"]
+    assert "missing" in details
+    assert "short" in details
+    assert "out_of_order" in details

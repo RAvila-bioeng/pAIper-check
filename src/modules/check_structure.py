@@ -90,8 +90,12 @@ def evaluate(paper):
         out_of_order=out_of_order,
     )
 
-    return PillarResult("Structure & Completeness", overall_score, details={"missing": missing_sections, "short": short_sections, "out_of_order": out_of_order}
-).__dict__
+    return PillarResult(
+        pillar_name="Structure & Completeness",
+        score=overall_score,
+        feedback=feedback,
+        gpt_analysis_data={"missing": missing_sections, "short": short_sections, "out_of_order": out_of_order}
+    ).__dict__
 
 
 def _check_section_structure(text: str, sections: list) -> tuple:

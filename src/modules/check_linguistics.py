@@ -385,7 +385,7 @@ class GrammarAnalyzer(BaseAnalyzer):
         
         if self.nlp_model and len(text.strip()) > 10:
             errors.extend(self._analyze_with_spacy(text))
-    else:
+        else:
             errors.extend(self._analyze_with_heuristics(text))
         
         return errors
@@ -622,12 +622,12 @@ class AcademicStyleAnalyzer(BaseAnalyzer):
         # This is more nuanced - academic writing often uses passive voice appropriately
         # We'll check for extreme overuse rather than flagging all instances
         
-    passive_patterns = [
-        r'\bis\s+\w+ed\b', r'\bwas\s+\w+ed\b', r'\bwere\s+\w+ed\b',
-        r'\bhas\s+been\s+\w+ed\b', r'\bhave\s+been\s+\w+ed\b'
-    ]
-    
-    passive_count = sum(len(re.findall(pattern, text)) for pattern in passive_patterns)
+        passive_patterns = [
+            r'\bis\s+\w+ed\b', r'\bwas\s+\w+ed\b', r'\bwere\s+\w+ed\b',
+            r'\bhas\s+been\s+\w+ed\b', r'\bhave\s+been\s+\w+ed\b'
+        ]
+        
+        passive_count = sum(len(re.findall(pattern, text)) for pattern in passive_patterns)
         total_sentences = len(TextPreprocessor.extract_sentences(text))
         
         # Flag if more than 80% of sentences use passive voice (might be excessive)
@@ -900,7 +900,7 @@ class LinguisticAnalyzer:
     def _generate_comprehensive_feedback(self, errors: List[LinguisticError], 
                                        metrics: LinguisticMetrics) -> str:
         """Generate comprehensive and actionable feedback."""
-    feedback_parts = []
+        feedback_parts = []
     
         if metrics.total_errors == 0:
             feedback_parts.append("Excellent linguistic quality with no significant errors detected.")
