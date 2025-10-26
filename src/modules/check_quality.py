@@ -90,7 +90,7 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
     
     basic_result = PillarResult("Scientific Quality", overall_score, feedback).__dict__
     
-    # Add detailed breakdown
+    # Add detailed breakdown and analysis
     basic_result['score_breakdown'] = {
         'novelty': novelty_score,
         'rigor': rigor_score,
@@ -100,7 +100,7 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
         'impact': impact_score,
         'reproducibility': reproducibility_score
     }
-    
+
     basic_result['detailed_analysis'] = {
         'novelty': novelty_details,
         'rigor': rigor_details,
@@ -110,8 +110,8 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
         'impact': impact_details,
         'reproducibility': reproducibility_details
     }
-    
-    # GPT enhancement if requested and available
+
+    # Always perform main analysis; add GPT insight only if requested
     if use_gpt and GPT_AVAILABLE:
         gpt_analysis_data = {
             'paper_info': {
@@ -122,9 +122,8 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
             'quality_metrics': basic_result['score_breakdown'],
             'detailed_analysis': basic_result['detailed_analysis']
         }
-        basic_result['gpt_analysis_data'] = gpt_analysis_data
-        return enhance_quality_with_gpt(paper, basic_result)
-    
+        basic_result['gpt_analysis'] = enhance_quality_with_gpt(paper, gpt_analysis_data)
+
     return basic_result
 
 
@@ -1354,7 +1353,8 @@ if GPT_AVAILABLE:
         gpt_analysis_data = basic_result.get('gpt_analysis_data', {})
         
         # Decide if GPT analysis is needed
-        needs_gpt = force_analysis or analyzer.should_use_gpt_analysis(basic_score, basic_feedback)
+        needs_gpt = force_analysis
+
         
         if not needs_gpt:
             basic_result['gpt_analysis'] = {
