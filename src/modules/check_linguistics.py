@@ -60,12 +60,22 @@ class LinguisticAnalyzer:
     
     # Academic vocabulary to whitelist
     ACADEMIC_WORDS = {
-        'algorithm', 'analysis', 'application', 'approach', 'dataset',
-        'evaluation', 'experiment', 'framework', 'implementation', 'methodology',
-        'optimization', 'parameter', 'performance', 'validation', 'visualization',
-        'neural', 'computational', 'statistical', 'empirical', 'theoretical',
-        'hypothesis', 'correlation', 'regression', 'significant', 'variance',
-        'coefficient', 'matrix', 'vector', 'tensor', 'gradient', 'convergence'
+        # General academic terms
+        'algorithm', 'analysis', 'application', 'approach', 'assumption', 'architecture',
+        '-dimensional', 'dataset', 'evaluation', 'experiment', 'framework', 'implementation', 
+        'methodology', 'model', 'optimization', 'parameter', 'performance', 'validation', 
+        'visualization', 'neural', 'network', 'convolutional', 'recurrent', 'transformer',
+        'computational', 'statistical', 'empirical', 'theoretical', 'qualitative', 'quantitative',
+        'hypothesis', 'correlation', 'regression', 'significant', 'variance', 'deviation',
+        'coefficient', 'matrix', 'vector', 'tensor', 'gradient', 'convergence', 'hyperparameter',
+        
+        # Domain-specific (can be expanded)
+        'bioinformatics', 'neuroscience', 'robotics', 'cybersecurity', 'blockchain',
+        'nanotechnology', 'quantum', 'genomics', 'proteomics', 'machine-learning',
+        'data-mining', 'big-data', 'cloud-computing', 'human-computer', 'interaction',
+
+        # Common Latin abbreviations
+        'etal', 'ieee', 'acm', 'arxiv'
     }
     
     # Common typos mapping
@@ -250,37 +260,76 @@ class LinguisticAnalyzer:
         # Then use spell checker if available
         if self.spell_checker and len(text) < 30000:
             try:
-                # Extract words with their positions
-                word_pattern = re.compile(r'\b[a-z]{3,15}\b')
-                word_matches = list(word_pattern.finditer(text.lower()))
+                # Improved word tokenizer to handle scientific terms
+                word_pattern = re.compile(r"\b[a-zA-Z0-9'-]+\b")
                 
-                # Get unique words to check
-                unique_words = {match.group() for match in word_matches 
-                               if match.group() not in self.ACADEMIC_WORDS}
+                # We iterate through the original text to preserve casing for filtering
+                word_matches = list(word_pattern.finditer(text))
                 
+                unique_words_to_check = set()
+                
+                for match in word_matches:
+                    word = match.group()
+                    
+                    # --- Filtering to reduce false positives ---
+                    # 1. Ignore short words
+                    if len(word) < 3:
+                        continue
+                    # 2. Ignore words with digits (e.g., v2, 3D)
+                    if re.search(r'\d', word):
+                        continue
+                    # 3. Ignore all-caps words (likely acronyms like 'LSTM')
+                    if word.isupper() and len(word) > 1:
+                        continue
+                    # 4. Ignore capitalized words (likely proper nouns)
+                    if word[0].isupper() and not word.isupper():
+                        continue
+                    # 5. Ignore words from the academic whitelist
+                    if word.lower() in self.ACADEMIC_WORDS:
+                        continue
+                    
+                    unique_words_to_check.add(word)
+
                 # Limit to avoid long processing
-                unique_words = list(unique_words)[:100]
+                if not unique_words_to_check:
+                    return errors
+                
+                unique_words_list = list(unique_words_to_check)[:150]
                 
                 # Check spelling in batch
-                misspelled = self.spell_checker.unknown(unique_words)
+                misspelled = self.spell_checker.unknown(unique_words_list)
+                
+                # Create a map of misspelled words to their original positions for error reporting
+                misspelled_map = {word.lower(): [] for word in misspelled}
+                for match in word_matches:
+                    word_lower = match.group().lower()
+                    if word_lower in misspelled_map:
+                        misspelled_map[word_lower].append(match)
                 
                 # Add errors with positions (limit to first 20)
-                for word in list(misspelled)[:20]:
-                    # Find first occurrence of this misspelled word
-                    for match in word_matches:
-                        if match.group() == word:
-                            correction = self.spell_checker.correction(word)
-                            errors.append(LinguisticError(
-                                error_type=ErrorType.SPELLING,
-                                text=word,
-                                severity=0.6,
-                                position=match.start(),
-                                line_number=self._get_line_number(text, match.start()),
-                                context=self._get_context(text, match.start()),
-                                suggestion=correction,
-                                explanation=f"Possible spelling error"
-                            ))
-                            break  # Only report first occurrence
+                error_count = 0
+                for word_lower in misspelled_map:
+                    if error_count >= 20:
+                        break
+                    
+                    # Get the first match for this misspelled word
+                    if misspelled_map[word_lower]:
+                        match = misspelled_map[word_lower][0]
+                        original_word = match.group()
+                        correction = self.spell_checker.correction(original_word)
+                        
+                        errors.append(LinguisticError(
+                            error_type=ErrorType.SPELLING,
+                            text=original_word,
+                            severity=0.6,
+                            position=match.start(),
+                            line_number=self._get_line_number(text, match.start()),
+                            context=self._get_context(text, match.start()),
+                            suggestion=correction,
+                            explanation=f"Possible spelling error"
+                        ))
+                        error_count += 1
+
             except Exception as e:
                 self.logger.debug(f"Spell check error: {e}")
         

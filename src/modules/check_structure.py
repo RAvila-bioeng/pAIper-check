@@ -16,33 +16,54 @@ def evaluate(paper):
     # Normalize for regex, keep original for slicing
     lowered_text = text.lower()
 
-    # Canonical sections with common synonyms/variants
+    # Canonical sections and their primary, accepted variants
     section_map = {
-        "abstract": [r"abstract", r"resumen", r"summary"],
-        "introduction": [r"introduction", r"background", r"objetivos", r"introducción"],
-        "methods": [r"methods?", r"methodology", r"materials?\s+and\s+methods"],
-        "results": [r"results?", r"findings"],
+        "abstract": [r"abstract", r"summary"],
+        "introduction": [r"introduction", r"background"],
+        "methods": [r"methods?", r"methodology", r"materials?\s+and\s+methods", r"experimental\s+setup"],
+        "results": [r"results?", r"findings", r"experiments", r"experimental\s+results"],
         "discussion": [r"discussion", r"analysis"],
-        "conclusion": [r"conclusions?", r"closing\s+remarks"],
-        "references": [r"references", r"bibliography", r"bibliograf[íi]a", r"works\s+cited"],
+        "conclusion": [r"conclusions?", r"concluding\s+remarks", r"summary\s+and\s+conclusion"],
+        "references": [r"references", r"bibliography", r"works\s+cited"],
     }
 
-    # Build heading regex: start of line, optional numbering, optional colon/dot, heading word
-    # e.g., "1. Introduction", "Introduction:", "Results", "2 Results"
+    # --- New: Aliases that are valid but should trigger a suggestion ---
+    section_aliases = {
+        "abstract": [r"resumen"],
+        "introduction": [r"objetivos", r"introducción"],
+        "conclusion": [r"discussion", r"final\s+remarks"], # Allow discussion as a conclusion
+        "references": [r"bibliograf[íi]a"],
+    }
+    
+    # Combine maps to find all possible headers
+    all_variants = {**section_map, **section_aliases}
+    for key, aliases in section_aliases.items():
+        if key in all_variants:
+            all_variants[key] = list(set(all_variants[key] + aliases))
+
     heading_patterns = {
         canonical: re.compile(
             rf"(?mi)^(?:\d+\s*[\.)]\s*)?(?:{'|'.join(variants)})\b\s*[:\.)-]?\s*$",
         )
-        for canonical, variants in section_map.items()
+        for canonical, variants in all_variants.items()
     }
 
-    # Find section positions (start indices) in text
+    # Find section positions and track which alias was used
     section_positions = {}
+    used_aliases = {}
     for canonical, pattern in heading_patterns.items():
         matches = list(pattern.finditer(text))
         if matches:
-            # take the first occurrence as the section start
-            section_positions[canonical] = matches[0].start()
+            match = matches[0]
+            section_positions[canonical] = match.start()
+            
+            # Check if this match was an alias
+            matched_text = match.group().lower()
+            if canonical in section_aliases:
+                for alias_pattern in section_aliases[canonical]:
+                    if re.search(alias_pattern, matched_text):
+                        used_aliases[canonical] = matched_text.strip()
+                        break
 
     # Determine found and missing from an expected core list
     expected_sections = [
@@ -88,13 +109,20 @@ def evaluate(paper):
         missing_sections=missing_sections,
         short_sections=short_sections,
         out_of_order=out_of_order,
+        used_aliases=used_aliases,
     )
 
+    # The score is NOT penalized for using aliases, only the feedback is adjusted.
     return PillarResult(
         pillar_name="Structure & Completeness",
         score=overall_score,
         feedback=feedback,
-        gpt_analysis_data={"missing": missing_sections, "short": short_sections, "out_of_order": out_of_order}
+        gpt_analysis_data={
+            "missing": missing_sections,
+            "short": short_sections,
+            "out_of_order": out_of_order,
+            "used_aliases": used_aliases,
+        }
     ).__dict__
 
 
@@ -201,6 +229,7 @@ def _generate_structure_feedback(
     missing_sections: list,
     short_sections: list,
     out_of_order: list,
+    used_aliases: dict,
 ) -> str:
     """Generate detailed feedback for structure evaluation."""
     feedback_parts = []
@@ -208,6 +237,16 @@ def _generate_structure_feedback(
     if missing_sections:
         feedback_parts.append(
             f"Missing essential sections: {', '.join(missing_sections)}."
+        )
+    
+    # --- New: Add suggestions for aliases ---
+    if used_aliases:
+        alias_feedback = []
+        for canonical, alias in used_aliases.items():
+            alias_feedback.append(f"'{alias}' was used instead of the standard '{canonical}'")
+        feedback_parts.append(
+            "Consider using standard section titles for clarity. " +
+            f"For example: {'; '.join(alias_feedback)}."
         )
 
     if out_of_order:
@@ -230,6 +269,7 @@ def _generate_structure_feedback(
             "Title quality needs improvement. Ensure proper capitalization and appropriate length."
         )
 
+    # If no other major issues were found, but aliases were used, the main feedback is the suggestion.
     if not feedback_parts:
         feedback_parts.append(
             "Good structure with essential sections present, in order, and well-organized."

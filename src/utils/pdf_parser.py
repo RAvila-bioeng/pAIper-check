@@ -38,19 +38,39 @@ def clean_text(text: str) -> str:
     """
     Clean extracted text by fixing common PDF extraction issues.
     """
-    # Remove excessive whitespace but preserve paragraph breaks
+    # --- Fix common ligature issues ---
+    ligatures = {
+        'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬀ': 'ff', 'ﬃ': 'ffi', 'ﬄ': 'ffl',
+        'ﬅ': 'ft', 'ﬆ': 'st'
+    }
+    for lig, repl in ligatures.items():
+        text = text.replace(lig, repl)
+
+    # --- Handle hyphenation ---
+    # Fix broken words at line endings (e.g., "experi-\nment" -> "experiment")
+    text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text, flags=re.IGNORECASE)
+
+    # --- Normalize whitespace and line breaks ---
+    # Replace multiple spaces with a single space
     text = re.sub(r' +', ' ', text)
-    
-    # Fix broken words at line endings (hyphenation)
-    text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
-    
-    # Fix line breaks within sentences (but keep paragraph breaks)
-    text = re.sub(r'(?<![.!?:])\n(?=[a-z])', ' ', text)
-    
-    # Normalize multiple newlines to double newline (paragraph break)
-    text = re.sub(r'\n\s*\n+', '\n\n', text)
-    
-    return text
+    # Remove spaces around newlines
+    text = re.sub(r'\s*\n\s*', '\n', text)
+    # Normalize multiple newlines to a single paragraph break
+    text = re.sub(r'\n{2,}', '\n\n', text)
+
+    # --- Smartly join lines within paragraphs ---
+    # This regex joins lines that end with a lowercase letter and are followed by another lowercase letter,
+    # which is a good heuristic for sentence continuation.
+    text = re.sub(r'(?<=[a-z,;])\n(?=[a-z])', ' ', text)
+
+    # --- Remove artifacts ---
+    # Remove page numbers (heuristic: a line with just numbers)
+    text = re.sub(r'\n\s*\d+\s*\n', '\n', text)
+    # Remove headers/footers (heuristic: short lines appearing frequently)
+    # This is complex; a simpler approach is to remove lines that don't end with punctuation
+    # and are short, but this is risky. Let's stick to less destructive cleaning.
+
+    return text.strip()
 
 
 def parse_paper_from_pdf(file_path: str) -> Paper:
@@ -155,31 +175,59 @@ def find_section_headers(text: str) -> List[tuple]:
     """
     headers = []
     
-    # Common section patterns in scientific papers
+    # Improved patterns for section headers
     section_patterns = [
-        # Numbered sections: "1. Introduction" or "1 Introduction"
-        (r'\n\s*(\d+\.?\s+[A-Z][a-zA-Z\s]+)\s*\n', 'numbered'),
+        # Numbered sections (more flexible): "1.", "1 ", "I.", "A."
+        (r"^\s*([IVXLCDM]+\.|[A-Z]\.|\d{1,2}(?:\.\d{1,2})*\.?)\s+([A-Z][a-zA-Z0-9\s,:\-()]+)$", 'numbered'),
         
-        # All caps headers: "INTRODUCTION"
-        (r'\n\s*([A-Z][A-Z\s]{5,50})\s*\n', 'caps'),
+        # All caps headers (less restrictive)
+        (r"^\s*([A-Z][A-Z\s\-]{5,70})$", 'caps'),
         
-        # Standard headers: "Introduction"
-        (r'\n\s*([A-Z][a-z]+(?:\s+(?:and|&|of|for|the)\s+[A-Z][a-z]+)*)\s*\n', 'standard'),
+        # Title case headers (less restrictive)
+        (r"^\s*([A-Z][a-z]+(?:\s+[A-Za-z]+){1,6})$", 'title_case'),
     ]
-    
-    for pattern, header_type in section_patterns:
-        for match in re.finditer(pattern, text):
-            header_text = match.group(1).strip()
+
+    # Keywords that are unlikely to be section headers
+    skip_keywords = {'abstract', 'introduction', 'references', 'conclusion', 'acknowledgments'}
+
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
             
-            # Filter out false positives
-            if len(header_text.split()) > 8:  # Too long for a header
-                continue
-            if header_text.lower() in ['a b s t r a c t', 'the', 'this', 'these']:
-                continue
+        for pattern, header_type in section_patterns:
+            match = re.match(pattern, line)
+            if match:
+                # Extract the full header text
+                header_text = line
                 
-            headers.append((match.start(), header_text, header_type))
-    
-    # Sort by position and remove duplicates
+                # --- Filtering to avoid false positives ---
+                # 1. Check length
+                if len(header_text.split()) > 10 or len(header_text) > 150:
+                    continue
+                # 2. Check if it ends with punctuation (unlikely for a title)
+                if header_text.endswith(('.', ':', ',')):
+                    continue
+                # 3. Check for common non-header keywords (case-insensitive)
+                if header_text.lower() in skip_keywords:
+                    # Allow them if they are part of a numbered list
+                    if header_type != 'numbered' and not re.match(r"^\d", header_text):
+                        continue
+                
+                # Find the position of this header in the full text
+                try:
+                    pos = text.find(header_text)
+                    headers.append((pos, header_text, header_type))
+                except ValueError:
+                    pass
+                
+                # Once a line is matched as a header, stop checking other patterns
+                break
+
+    if not headers:
+        return []
+
+    # Sort by position and remove duplicates/overlaps
     headers.sort(key=lambda x: x[0])
     
     # Remove overlapping headers (keep the first one)
@@ -202,34 +250,38 @@ def extract_sections(text: str) -> List[Section]:
     # Find all section headers
     headers = find_section_headers(text)
     
-    if not headers:
-        # Fallback to basic extraction if no headers found
-        return extract_sections_fallback(text)
-    
+    # If header detection is weak, combine with fallback
+    if len(headers) < 2:
+        fallback_sections = extract_sections_fallback(text)
+        if fallback_sections:
+            return fallback_sections
+        if not headers: # No headers at all
+             return []
+
     # Extract content between headers
     for i, (pos, header, htype) in enumerate(headers):
-        # Determine end position (next header or end of text)
+        start_pos = pos + len(header)
         end_pos = headers[i + 1][0] if i + 1 < len(headers) else len(text)
         
-        # Extract section content
-        content = text[pos:end_pos].strip()
+        content = text[start_pos:end_pos].strip()
         
-        # Remove the header from content
-        content = content[len(header):].strip()
-        
-        # Clean up content
+        # Further clean the content
         content = re.sub(r'\s+', ' ', content)
         
-        # Only add substantial sections
-        if len(content) > 100:
-            # Clean header
-            clean_header = re.sub(r'^\d+\.?\s*', '', header).strip()
-            sections.append(Section(title=clean_header, content=content[:5000]))
+        # Ensure section is substantial before adding
+        if len(content) > 200:
+            # Clean header text by removing numbering/bullets
+            clean_header = re.sub(r"^\s*([IVXLCDM]+\.|[A-Z]\.|\d{1,2}(?:\.\d{1,2})*\.?)\s*", '', header).strip()
+            sections.append(Section(title=clean_header, content=content[:10000]))
     
-    # If we found very few sections, try fallback method
-    if len(sections) < 3:
-        return extract_sections_fallback(text)
-    
+    # If the primary method yields very few sections, it might have failed.
+    # In this case, the fallback can be a lifesaver.
+    if len(sections) < 2:
+        fallback_sections = extract_sections_fallback(text)
+        # Simple merge: return fallback if it's better
+        if len(fallback_sections) > len(sections):
+            return fallback_sections
+
     return sections
 
 
