@@ -1,6 +1,6 @@
 """
 Reproducibility Assessment Module
-Enhanced for all scientific disciplines with optimized code.
+Enhanced for experimental scientific papers.
 """
 
 import re
@@ -17,8 +17,8 @@ def evaluate(paper) -> dict:
     materials_score = _check_materials_specification(text)
     parameter_score = _check_parameter_specification(text)
     
-    # Weighted average (clarity is most important)
-    overall_score = clarity_score * 0.4 + data_score * 0.25 + materials_score * 0.2 + parameter_score * 0.15
+    # Weighted average for experimental science
+    overall_score = clarity_score * 0.3 + data_score * 0.15 + materials_score * 0.35 + parameter_score * 0.2
     
     feedback = _generate_feedback(clarity_score, data_score, materials_score, parameter_score, text)
     
@@ -196,9 +196,10 @@ def _check_materials_specification(text: str) -> float:
     """
     score = 1.0
     
-    # Equipment models/types - enhanced detection
+    # Equipment models/types - enhanced detection for experimental science
     equipment = len(re.findall(
-        r'\b(model|type|series|diameter|thickness|dimension)\s+[A-Z0-9-]+|'
+        r'\b(model|type|series|diameter|thickness|dimension|spectrometer|microscope|'
+        r'chromatograph|detector|analyzer)\s+[A-Z0-9-]+|'
         r'\d+\.?\d*\s*(?:mm|µm|μm|cm|m)\s+(?:thick|diameter|wide|long)',
         text, re.IGNORECASE
     ))
@@ -269,11 +270,11 @@ def _check_parameter_specification(text: str) -> float:
     elif unique_values >= 20:
         score += 0.15  # Excellent parametrization
     
-    # Parameter keywords - enhanced
+    # Parameter keywords - enhanced for experimental science
     params = len(re.findall(
         r'\b(temperature|pressure|ph|concentration|dose|dosage|flow rate|voltage|current|'
-        r'potential|learning rate|batch size|threshold|alpha|p-value|significance|'
-        r'wavelength|frequency|speed|rate|time|duration|incubation|reaction)\b',
+        r'potential|wavelength|frequency|speed|rate|time|duration|incubation|reaction|'
+        r'humidity|salinity|viscosity|purity|yield)\b',
         text, re.IGNORECASE
     ))
     
@@ -306,80 +307,46 @@ def _generate_feedback(clarity: float, data: float, materials: float, parameters
     strengths = []
     
     # Calculate overall quality for context
-    overall = (clarity * 0.4 + data * 0.25 + materials * 0.2 + parameters * 0.15)
+    overall = (clarity * 0.3 + data * 0.15 + materials * 0.35 + parameters * 0.2)
     
-    # Methodological clarity feedback
-    if clarity < 0.5:
-        issues.append("Methods lack critical detail - add equipment models, step-by-step procedures, and precise quantities with units")
-    elif clarity < 0.65:
-        issues.append("Methods could be more detailed - consider adding explicit step-by-step procedures or reducing ambiguous language")
-    elif clarity < 0.75:
-        # Minor issue - only mention if it's the weakest component
-        if clarity < min(data, materials, parameters):
-            issues.append("Minor: Consider adding more methodological details for optimal reproducibility")
-    else:
+    # Generate strengths and issues from sub-scores
+    if clarity >= 0.7:
         strengths.append("clear and detailed methodology")
-    
-    # Data availability feedback
-    if data < 0.4:
-        issues.append("Data/code availability unclear - provide repository link, DOI, or explicit availability statement")
-    elif data < 0.6:
-        # Check if it's experimental methods paper (may not need public data)
-        if 'supplementary' in text or 'protocol' in text or 'procedure' in text:
-            # Methods paper - be lenient
-            pass
-        else:
-            issues.append("Consider improving data accessibility (e.g., public repository, supplementary materials)")
-    elif data >= 0.7:
+    elif clarity < 0.5:
+        issues.append("Methods lack critical detail - add equipment models, step-by-step procedures, and precise quantities with units")
+    else:
+        issues.append("Methods could be more detailed - consider adding explicit step-by-step procedures or reducing ambiguous language")
+        
+    if data >= 0.7:
         strengths.append("adequate data documentation")
-    
-    # Materials specification feedback
-    if materials < 0.5:
-        issues.append("Materials underspecified - add vendor names, catalog numbers, and equipment specifications")
-    elif materials < 0.65:
-        issues.append("Consider adding more material details (e.g., catalog numbers, version information)")
-    elif materials >= 0.75:
+    elif data < 0.4:
+        issues.append("Data/code availability unclear - provide repository link, DOI, or explicit availability statement")
+    else:
+        issues.append("Consider improving data accessibility (e.g., public repository, supplementary materials)")
+
+    if materials >= 0.7:
         strengths.append("well-specified materials and equipment")
-    
-    # Parameters feedback
-    if parameters < 0.5:
-        issues.append("Critical parameters missing - specify all quantities with units (concentrations, temperatures, times, etc.)")
-    elif parameters < 0.65:
-        issues.append("Add more parameter details (e.g., specific values for all experimental conditions)")
-    elif parameters >= 0.75:
+    elif materials < 0.5:
+        issues.append("Materials are poorly specified - add vendor names, catalog numbers, and specific models for all equipment and reagents")
+    else:
+        issues.append("Consider adding more specific details for materials, such as catalog numbers or supplier locations")
+
+    if parameters >= 0.7:
         strengths.append("comprehensive parameter specification")
+    elif parameters < 0.5:
+        issues.append("Critical experimental parameters are missing - specify all quantities with units (e.g., concentrations, temperatures, times)")
+    else:
+        issues.append("Consider adding more parameter details for all experimental conditions to ensure replicability")
     
     # Generate final feedback based on overall quality
-    if overall >= 0.85:
-        if strengths:
-            return f"Excellent reproducibility with {', '.join(strengths)}."
-        else:
-            return "Excellent reproducibility - methods are detailed, materials well-specified, and parameters precise."
+    if overall >= 0.8:
+        return f"Excellent reproducibility, particularly in: {', '.join(strengths)}. Minor areas for improvement: {', '.join(issues)}"
     
-    elif overall >= 0.70:
-        if not issues:
-            # High score but no specific strengths listed
-            return "Good reproducibility with sufficient methodological detail, material specifications, and parameter documentation."
-        elif len(issues) == 1 and "minor" in issues[0].lower():
-            # Only minor issues
-            if strengths:
-                return f"Good reproducibility with {', '.join(strengths)}. {issues[0]}"
-            else:
-                return f"Good reproducibility. {issues[0]}"
-        else:
-            # Has some issues but overall good
-            if strengths:
-                return f"Good reproducibility with {', '.join(strengths)}. To improve: {' • '.join([i for i in issues if 'minor' not in i.lower()])}"
-            else:
-                return f"Good reproducibility overall. To improve: {' • '.join(issues)}"
+    elif overall >= 0.7:
+        return f"Good reproducibility with some areas for improvement. Strengths: {', '.join(strengths)}. To improve: {', '.join(issues)}"
     
-    elif overall >= 0.50:
-        # Moderate - focus on what needs improvement
-        if strengths:
-            return f"Moderate reproducibility. Strengths: {', '.join(strengths)}. Issues: {' • '.join(issues)}"
-        else:
-            return f"Moderate reproducibility. Key improvements needed: {' • '.join(issues)}"
+    elif overall >= 0.5:
+        return f"Moderate reproducibility. Key improvements needed: {', '.join(issues)}. Strengths: {', '.join(strengths)}"
     
     else:
-        # Poor - be direct about problems
-        return f"Reproducibility needs significant improvement: {' • '.join(issues)}"
+        return f"Reproducibility needs significant improvement: {', '.join(issues)}"
