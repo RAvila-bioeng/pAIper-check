@@ -182,7 +182,8 @@ def _check_reference_quality(references: List[Reference]) -> float:
         ]
         has_venue = any(keyword in txt for keyword in venue_keywords)
         
-        if all([has_author, has_year, has_title, has_venue]):
+        components = [has_author, has_year, has_title, has_venue]
+        if sum(components) >= 3:  # Al menos 3 componentes presentes
             complete_refs += 1
     
     if len(references) == 0:

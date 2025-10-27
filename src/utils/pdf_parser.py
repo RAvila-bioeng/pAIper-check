@@ -180,19 +180,29 @@ def find_section_headers(text: str) -> List[tuple]:
         # Numbered sections (more flexible): "1.", "1 ", "I.", "A."
         (r"^\s*([IVXLCDM]+\.|[A-Z]\.|\d{1,2}(?:\.\d{1,2})*\.?)\s+([A-Z][a-zA-Z0-9\s,:\-()]+)$", 'numbered'),
         
-        # All caps headers (less restrictive)
-        (r"^\s*([A-Z][A-Z\s\-]{5,70})$", 'caps'),
+        # All caps headers (less restrictive) - AGREGADO: mínimo 4 caracteres
+        (r"^\s*([A-Z][A-Z\s\-]{3,70})$", 'caps'),  # ← Cambiado de {5,70} a {3,70}
         
         # Title case headers (less restrictive)
-        (r"^\s*([A-Z][a-z]+(?:\s+[A-Za-z]+){1,6})$", 'title_case'),
+        (r"^\s*([A-Z][a-z]+(?:\s+[A-Za-z]+){0,6})$", 'title_case'),  # ← Cambiado de {1,6} a {0,6}
     ]
 
+    # Keywords que SI queremos detectar como headers
+    priority_headers = {'references', 'bibliography', 'acknowledgments', 'appendix'}
+    
     # Keywords that are unlikely to be section headers
-    skip_keywords = {'abstract', 'introduction', 'references', 'conclusion', 'acknowledgments'}
+    skip_keywords = {'abstract', 'conclusion'}  # Removidos: introduction, references
 
     for line in text.split('\n'):
         line = line.strip()
         if not line:
+            continue
+        
+        # NUEVO: Detección especial para headers prioritarios
+        line_lower = line.lower()
+        if line_lower in priority_headers:
+            pos = text.find(line)
+            headers.append((pos, line, 'priority'))
             continue
             
         for pattern, header_type in section_patterns:
@@ -240,7 +250,6 @@ def find_section_headers(text: str) -> List[tuple]:
     
     return cleaned_headers
 
-
 def extract_sections(text: str) -> List[Section]:
     """
     Extract main sections from the paper using improved detection.
@@ -250,6 +259,7 @@ def extract_sections(text: str) -> List[Section]:
     # Find all section headers
     headers = find_section_headers(text)
     
+    
     # If header detection is weak, combine with fallback
     if len(headers) < 2:
         fallback_sections = extract_sections_fallback(text)
@@ -257,6 +267,38 @@ def extract_sections(text: str) -> List[Section]:
             return fallback_sections
         if not headers: # No headers at all
              return []
+    # En pdf_parser.py, después de línea 179:
+def extract_sections(text: str) -> List[Section]:
+    """
+    Extract main sections from the paper using improved detection.
+    """
+    sections = []
+    
+    # Find all section headers
+    headers = find_section_headers(text)
+    
+    # DEBUG: Ver qué headers se detectan
+    print(f"DEBUG: Headers detectados: {[h[1] for h in headers]}")
+    print(f"DEBUG: Tipos de headers: {[h[2] for h in headers]}")
+    
+    # NUEVO: Buscar "references" manualmente
+    if not any('reference' in h[1].lower() for h in headers):
+        print("⚠️  WARNING: 'References' no detectado en headers. Buscando manualmente...")
+        ref_match = re.search(r'(?:^|\n)\s*(references?|bibliography)\s*\n', text, re.IGNORECASE | re.MULTILINE)
+        if ref_match:
+            print(f"✓ Referencias encontradas en posición {ref_match.start()}")
+            headers.append((ref_match.start(), ref_match.group(1).strip(), 'manual'))
+            headers.sort(key=lambda x: x[0])
+        else:
+            print("✗ No se encontraron referencias en el texto")
+    
+    # If header detection is weak, combine with fallback
+    if len(headers) < 2:
+        fallback_sections = extract_sections_fallback(text)
+        if fallback_sections:
+            return fallback_sections
+        if not headers:  # No headers at all
+            return []
 
     # Extract content between headers
     for i, (pos, header, htype) in enumerate(headers):
@@ -272,10 +314,10 @@ def extract_sections(text: str) -> List[Section]:
         if len(content) > 200:
             # Clean header text by removing numbering/bullets
             clean_header = re.sub(r"^\s*([IVXLCDM]+\.|[A-Z]\.|\d{1,2}(?:\.\d{1,2})*\.?)\s*", '', header).strip()
-            sections.append(Section(title=clean_header, content=content[:10000]))
+            # SIN TRUNCAR EL CONTENIDO
+            sections.append(Section(title=clean_header, content=content))
     
     # If the primary method yields very few sections, it might have failed.
-    # In this case, the fallback can be a lifesaver.
     if len(sections) < 2:
         fallback_sections = extract_sections_fallback(text)
         # Simple merge: return fallback if it's better
@@ -324,37 +366,60 @@ def extract_references(text: str) -> List[Reference]:
     """Extract references with improved detection."""
     references = []
     
-    # Find references section
+    # --- 1️⃣ Detectar bloque de referencias ---
     ref_patterns = [
-        r'(?:^|\n)\s*references?\s*\n+(.*?)$',
-        r'(?:^|\n)\s*bibliography\s*\n+(.*?)$',
-        r'(?:^|\n)\s*(?:referencias|références)\s*\n+(.*?)$',
+        r'(?:^|\n)\s*references?\s*\n+(.*)',
+        r'(?:^|\n)\s*bibliography\s*\n+(.*)',
+        r'(?:^|\n)\s*(?:referencias|références)\s*\n+(.*)',
     ]
-    
+
     ref_text = None
     for pattern in ref_patterns:
         match = re.search(pattern, text, re.DOTALL | re.IGNORECASE | re.MULTILINE)
         if match:
             ref_text = match.group(1).strip()
-            break
-    
+            # Cortar anexos si los hay
+            ref_text = re.split(
+                r'\n\s*(appendix|acknowledgment|supplementary materials?)\b',
+                ref_text,
+                flags=re.IGNORECASE
+            )[0]
+            if len(ref_text) > 100:
+                break
+
     if not ref_text:
+        print("DEBUG: No se encontró sección de referencias")
         return references
-    
-    # Split references by common patterns
-    # Look for: [1], [1], (1), 1., or 1)
-    ref_entries = re.split(r'\n\s*(?:\[\d+\]|\(\d+\)|\d+\.|\d+\))\s+', ref_text)
-    
+
+    print(f"DEBUG: Sección de referencias encontrada: {len(ref_text)} caracteres")
+
+    # --- 2️⃣ Dividir las referencias individuales ---
+    # Intentar primero con patrones numerados
+    ref_entries = re.split(
+        r'\n\s*(?:\[\d+\]|\(\d+\)|\d+\.\s|\d+\)\s)',
+        ref_text
+    )
+
+    # Si no hay muchas divisiones, probar heurísticas adicionales
+    if len(ref_entries) < 3:
+        ref_entries = re.split(r'\n{2,}|\n(?=[A-Z][a-z]+\s+[A-Z]\.)', ref_text)
+
+    if len(ref_entries) < 5:
+        ref_entries = re.split(r'\n\n+', ref_text)
+
+    print(f"DEBUG: Número de referencias extraídas: {len(ref_entries)}")
+
+    # --- 3️⃣ Procesar cada referencia ---
     for entry in ref_entries:
         entry = entry.strip()
-        if len(entry) > 30:  # Only substantial references
-            # Clean up the entry
+        if len(entry) > 30:
             entry = re.sub(r'\s+', ' ', entry)
-            
-            # Try to extract DOI
-            doi_match = re.search(r'(?:doi[:\s]*|https?://doi\.org/)([^\s,;]+)', entry, re.IGNORECASE)
+            doi_match = re.search(
+                r'(?:doi[:\s]*|https?://doi\.org/)([^\s,;]+)',
+                entry,
+                re.IGNORECASE
+            )
             doi = doi_match.group(1) if doi_match else None
-            
             references.append(Reference(text=entry[:500], doi=doi))
-    
+
     return references
