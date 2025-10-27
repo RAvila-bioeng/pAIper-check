@@ -260,37 +260,12 @@ def extract_sections(text: str) -> List[Section]:
     headers = find_section_headers(text)
     
     
-    # If header detection is weak, combine with fallback
-    if len(headers) < 2:
-        fallback_sections = extract_sections_fallback(text)
-        if fallback_sections:
-            return fallback_sections
-        if not headers: # No headers at all
-             return []
-    # En pdf_parser.py, después de línea 179:
-def extract_sections(text: str) -> List[Section]:
-    """
-    Extract main sections from the paper using improved detection.
-    """
-    sections = []
-    
-    # Find all section headers
-    headers = find_section_headers(text)
-    
-    # DEBUG: Ver qué headers se detectan
-    print(f"DEBUG: Headers detectados: {[h[1] for h in headers]}")
-    print(f"DEBUG: Tipos de headers: {[h[2] for h in headers]}")
-    
-    # NUEVO: Buscar "references" manualmente
+    # Manually search for "references" if not found by primary header detection
     if not any('reference' in h[1].lower() for h in headers):
-        print("⚠️  WARNING: 'References' no detectado en headers. Buscando manualmente...")
         ref_match = re.search(r'(?:^|\n)\s*(references?|bibliography)\s*\n', text, re.IGNORECASE | re.MULTILINE)
         if ref_match:
-            print(f"✓ Referencias encontradas en posición {ref_match.start()}")
             headers.append((ref_match.start(), ref_match.group(1).strip(), 'manual'))
             headers.sort(key=lambda x: x[0])
-        else:
-            print("✗ No se encontraron referencias en el texto")
     
     # If header detection is weak, combine with fallback
     if len(headers) < 2:
@@ -388,10 +363,7 @@ def extract_references(text: str) -> List[Reference]:
                 break
 
     if not ref_text:
-        print("DEBUG: No se encontró sección de referencias")
         return references
-
-    print(f"DEBUG: Sección de referencias encontrada: {len(ref_text)} caracteres")
 
     # --- 2️⃣ Dividir las referencias individuales ---
     # Intentar primero con patrones numerados
@@ -406,8 +378,6 @@ def extract_references(text: str) -> List[Reference]:
 
     if len(ref_entries) < 5:
         ref_entries = re.split(r'\n\n+', ref_text)
-
-    print(f"DEBUG: Número de referencias extraídas: {len(ref_entries)}")
 
     # --- 3️⃣ Procesar cada referencia ---
     for entry in ref_entries:

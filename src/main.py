@@ -395,7 +395,12 @@ def print_results(paper, overall_score, results, weights, args):
             indicator = "🔴"
         
         print(f"  {indicator} {pillar_name:.<40} {score:.2f} (weight: {weight:.2f})")
-    
+        
+        # --- NEW: Print score breakdown if available ---
+        if 'score_breakdown' in result:
+            for sub_name, sub_score in result['score_breakdown'].items():
+                print(f"    - {sub_name:.<37} {sub_score:.2f}")
+
     print("\n" + "-"*70)
     print("Detailed Feedback:")
     print("-"*70)
@@ -405,11 +410,7 @@ def print_results(paper, overall_score, results, weights, args):
         feedback = result.get('feedback', 'No feedback available')
         
         print(f"\n{pillar_name}:")
-        # Truncate long feedback
-        if len(feedback) > 500:
-            print(f"  {feedback[:500]}...")
-        else:
-            print(f"  {feedback}")
+        print(f"  {feedback}")
         
         # NEW: Show linguistic errors if requested or if score is very low
         if pillar == "linguistics" and (args.show_errors or result.get("score", 1.0) < 0.3):

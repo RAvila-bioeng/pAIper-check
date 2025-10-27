@@ -4,47 +4,23 @@ Evaluates the flow and logical connection of the argument.
 """
 
 import re
+import json
 from typing import List, Dict, Tuple
 from collections import Counter
 from models.score import PillarResult
 from modules.gpt_cohesion_analyzer import enhance_coherence_with_gpt
 
-# ============== CONFIGURACIÓN ==============
-STOP_WORDS = {
-    'this', 'that', 'with', 'from', 'they', 'have', 'been', 'were', 'said',
-    'each', 'which', 'their', 'time', 'will', 'about', 'could', 'there',
-    'after', 'first', 'well', 'also', 'where', 'much', 'some', 'very',
-    'when', 'make', 'more', 'over', 'think', 'help', 'good', 'same',
-    'many', 'most', 'other', 'new', 'way', 'may', 'say', 'use', 'man',
-    'find', 'give', 'year', 'work', 'part', 'take', 'get', 'place',
-    'made', 'live', 'through', 'back', 'before', 'line', 'right', 'too',
-    'means', 'old', 'any', 'tell', 'boy', 'follow', 'came', 'want',
-    'show', 'around', 'form', 'three', 'small', 'set', 'put', 'end',
-    'why', 'again', 'turn', 'here', 'just', 'like', 'long', 'than',
-    'them', 'such', 'what', 'into', 'only', 'both', 'such', 'must'
-}
-
-CONNECTORS = {
-    'causality': ['therefore', 'thus', 'hence', 'consequently', 'as a result', 'for this reason'],
-    'contrast': ['however', 'nevertheless', 'nonetheless', 'on the other hand', 'in contrast', 'conversely', 'whereas'],
-    'addition': ['furthermore', 'moreover', 'additionally', 'in addition', 'besides', 'also'],
-    'sequence': ['firstly', 'secondly', 'thirdly', 'finally', 'subsequently', 'then', 'next'],
-    'conclusion': ['in conclusion', 'to conclude', 'in summary', 'overall', 'to sum up']
-}
-
-TRANSITION_PHRASES = [
-    'as discussed', 'as mentioned', 'previously', 'in the previous section',
-    'building on', 'extending', 'following', 'based on', 'as shown',
-    'as demonstrated', 'in line with', 'consistent with', 'in accordance with'
-]
-
-SECTION_KEYWORDS = {
-    'introduction': ['introduction', 'background'],
-    'methodology': ['method', 'methodology', 'materials', 'experimental'],
-    'results': ['result', 'finding', 'observation'],
-    'discussion': ['discussion', 'interpretation'],
-    'conclusion': ['conclusion', 'summary', 'final']
-}
+# --- Load Keywords from External Configuration ---
+try:
+    with open('config/keywords.json', 'r') as f:
+        _keywords = json.load(f)
+    STOP_WORDS = set(_keywords.get('STOP_WORDS', [])) # Use a set for efficient lookup
+    CONNECTORS = _keywords.get('CONNECTORS', {})
+    TRANSITION_PHRASES = _keywords.get('TRANSITION_PHRASES', [])
+    SECTION_KEYWORDS = _keywords.get('SECTION_KEYWORDS', {})
+except (FileNotFoundError, json.JSONDecodeError) as e:
+    print(f"Warning: Could not load keywords from config/keywords.json. Using empty fallbacks. Error: {e}")
+    STOP_WORDS, CONNECTORS, TRANSITION_PHRASES, SECTION_KEYWORDS = set(), {}, [], {}
 
 
 def evaluate(paper, use_gpt: bool = False) -> dict:
@@ -73,7 +49,7 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
     consistency_score, consistency_details = _check_narrative_consistency(text, text_metrics)
     
     # Check logical flow
-    flow_score, flow_details = _check_logical_flow(text, sections)
+    flow_score, flow_details = _check_logical_flow_refactored(sections)
     
     # Calculate weighted overall score
     weights = {
@@ -99,6 +75,14 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
     )
     
     basic_result = PillarResult("Coherence & Cohesion", overall_score, feedback).__dict__
+
+    # Add detailed score breakdown for transparency
+    basic_result['score_breakdown'] = {
+        'Argumentative Fluency': fluency_score,
+        'Section Connectivity': connectivity_score,
+        'Narrative Consistency': consistency_score,
+        'Logical Flow': flow_score
+    }
     
     if use_gpt:
         gpt_analysis_data = {
@@ -161,21 +145,28 @@ def _check_argumentative_fluency(text: str, metrics: Dict) -> Tuple[float, Dict]
     
     details['connector_density'] = normalized_connector_density
     
-    # Expected density: 10-30 connectors per 1000 words
-    if normalized_connector_density < 10:
-        score -= 0.4
-        details['fluency_issue'] = 'Too few logical connectors'
-    elif normalized_connector_density < 15:
-        score -= 0.2
-        details['fluency_issue'] = 'Limited logical connectors'
-    elif normalized_connector_density > 40:
-        score -= 0.1
-        details['fluency_issue'] = 'Excessive connectors (may be verbose)'
+    # --- New Rubric for Connector Density ---
+    density_score = 1.0
+    if normalized_connector_density >= 8:
+        density_score = 1.0
+        details['fluency_issue'] = 'Excellent argumentative fluency.'
+    elif 4 <= normalized_connector_density < 8:
+        density_score = 0.8
+        details['fluency_issue'] = 'Good argumentative fluency.'
+    elif 2 <= normalized_connector_density < 4:
+        density_score = 0.6
+        details['fluency_issue'] = 'Argumentative fluency could be improved. The text is a bit dry.'
+    else: # < 2
+        density_score = 0.3
+        details['fluency_issue'] = 'Poor argumentative fluency, potential logical gaps.'
+
+    score = density_score
     
+    # Other factors penalize the base score from the density rubric
     # Check diversity of connectors
     categories_used = sum(1 for count in connector_counts.values() if count > 0)
     if categories_used < 3:
-        score -= 0.2
+        score -= 0.15 # Reduced penalty
         details['diversity_issue'] = f'Only {categories_used}/5 connector types used'
     
     # Check paragraph transitions
@@ -192,7 +183,7 @@ def _check_argumentative_fluency(text: str, metrics: Dict) -> Tuple[float, Dict]
     details['transition_ratio'] = transition_ratio
     
     if transition_ratio < 0.3:
-        score -= 0.3
+        score -= 0.2 # Reduced penalty
         details['transition_issue'] = 'Poor paragraph transitions'
     elif transition_ratio < 0.5:
         score -= 0.1
@@ -341,71 +332,69 @@ def _are_similar_terms(term1: str, term2: str) -> bool:
     return False
 
 
-def _check_logical_flow(text: str, sections: List) -> Tuple[float, Dict]:
-    """Check the logical progression of ideas."""
+def _check_logical_flow_refactored(sections: List) -> Tuple[float, Dict]:
+    """
+    Check the logical progression of ideas based on pre-parsed sections.
+    """
     score = 1.0
     details = {}
     
-    # Detect section order
-    section_positions = {}
-    
-    for section_type, keywords in SECTION_KEYWORDS.items():
-        for keyword in keywords:
-            match = re.search(rf'\b{keyword}\b', text.lower())
-            if match:
-                section_positions[section_type] = match.start()
+    if not sections:
+        return 0.4, {'warning': 'No sections found for logical flow analysis.'}
+
+    # Map section titles to canonical names
+    found_canonical_sections = []
+    for section in sections:
+        title_lower = section.title.lower().strip()
+        matched = False
+        for canonical, keywords in SECTION_KEYWORDS.items():
+            for keyword in keywords:
+                if re.search(r'\b' + keyword + r'\b', title_lower):
+                    if canonical not in found_canonical_sections:
+                        found_canonical_sections.append(canonical)
+                    matched = True
+                    break
+            if matched:
                 break
     
-    details['sections_detected'] = list(section_positions.keys())
+    details['sections_detected'] = found_canonical_sections
     
     # Expected order
     expected_order = ['introduction', 'methodology', 'results', 'discussion', 'conclusion']
-    found_sections = sorted(section_positions.items(), key=lambda x: x[1])
-    found_order = [section for section, _ in found_sections]
     
-    # Check if order matches expected
+    # Check if the order of found sections matches the expected order
+    indices = [expected_order.index(s) for s in found_canonical_sections if s in expected_order]
+    
     order_violations = 0
-    for i in range(len(found_order) - 1):
-        current_section = found_order[i]
-        next_section = found_order[i + 1]
-        
-        if current_section in expected_order and next_section in expected_order:
-            current_idx = expected_order.index(current_section)
-            next_idx = expected_order.index(next_section)
+    for i in range(len(indices) - 1):
+        if indices[i] > indices[i+1]:
+            order_violations += 1
             
-            if next_idx < current_idx:
-                order_violations += 1
-    
     details['order_violations'] = order_violations
     
     if order_violations > 0:
         score -= min(0.4, order_violations * 0.2)
         details['flow_issue'] = f'{order_violations} section ordering violation(s)'
-    
-    # Check for conclusion markers
-    conclusion_markers = ['in conclusion', 'to conclude', 'in summary', 'to summarize', 
-                         'overall', 'in summary', 'finally']
-    conclusion_count = sum(text.lower().count(marker) for marker in conclusion_markers)
-    
-    details['conclusion_markers'] = conclusion_count
-    
-    if conclusion_count == 0:
-        score -= 0.2
-        details['conclusion_issue'] = 'No clear conclusion markers found'
-    
-    # Check if conclusion references introduction
-    if 'conclusion' in section_positions and 'introduction' in section_positions:
-        conclusion_start = section_positions['conclusion']
-        conclusion_text = text[conclusion_start:].lower()
-        
-        intro_callback_phrases = ['as introduced', 'as stated', 'our objective', 
-                                 'our goal', 'we aimed', 'the purpose']
-        callback_found = any(phrase in conclusion_text for phrase in intro_callback_phrases)
-        
-        details['intro_conclusion_link'] = callback_found
-        
-        if not callback_found:
-            score -= 0.1
+
+    # Check for conclusion markers and link to introduction
+    conclusion_section = next((s for s in sections if 'conclusion' in s.title.lower()), None)
+    introduction_section = next((s for s in sections if 'introduction' in s.title.lower()), None)
+
+    if conclusion_section:
+        conclusion_text = conclusion_section.content.lower()
+        conclusion_markers = ['in conclusion', 'to conclude', 'in summary', 'to summarize', 'overall', 'finally']
+        conclusion_count = sum(conclusion_text.count(marker) for marker in conclusion_markers)
+        details['conclusion_markers'] = conclusion_count
+        if conclusion_count == 0:
+            score -= 0.2
+            details['conclusion_issue'] = 'No clear conclusion markers found in the conclusion section.'
+
+        if introduction_section:
+            intro_callback_phrases = ['as introduced', 'as stated', 'our objective', 'our goal', 'we aimed', 'the purpose']
+            callback_found = any(phrase in conclusion_text for phrase in intro_callback_phrases)
+            details['intro_conclusion_link'] = callback_found
+            if not callback_found:
+                score -= 0.1
     
     return max(0.0, min(1.0, score)), details
 
@@ -414,62 +403,49 @@ def _generate_cohesion_feedback(fluency_score: float, fluency_details: Dict,
                                connectivity_score: float, connectivity_details: Dict,
                                consistency_score: float, consistency_details: Dict,
                                flow_score: float, flow_details: Dict) -> str:
-    """Generate detailed feedback for coherence and cohesion."""
+    """Generate detailed, balanced feedback for coherence and cohesion."""
     feedback_parts = []
     
-    # Fluency feedback
-    if fluency_score < 0.7:
-        if 'fluency_issue' in fluency_details:
-            feedback_parts.append(f"⚠️ Argumentative Fluency: {fluency_details['fluency_issue']}. "
-                                f"Found {fluency_details['total_connectors']} connectors "
-                                f"({fluency_details['connector_density']:.1f} per 1000 words).")
-        if 'diversity_issue' in fluency_details:
-            feedback_parts.append(f"Consider using more diverse logical connectors. {fluency_details['diversity_issue']}.")
-    
-    # Connectivity feedback
-    if connectivity_score < 0.7:
-        if 'connectivity_issue' in connectivity_details:
-            feedback_parts.append(f"⚠️ Section Connectivity: {connectivity_details['connectivity_issue']}. "
-                                f"Add explicit cross-references between sections.")
-        if connectivity_details.get('reference_count', 0) == 0:
-            feedback_parts.append("Consider adding phrases like 'as discussed in' or 'see Section X'.")
-    
-    # Consistency feedback
-    if consistency_score < 0.7:
+    # --- Evaluate Each Sub-Pillar ---
+
+    # 1. Argumentative Fluency
+    if fluency_score >= 0.8:
+        feedback_parts.append(f"✓ Excellent argumentative fluency with a good density of logical connectors ({fluency_details.get('connector_density', 0):.1f} per 1000 words).")
+    elif fluency_score >= 0.6:
+        feedback_parts.append(f"✓ Good argumentative fluency. Connector density is adequate ({fluency_details.get('connector_density', 0):.1f} per 1000 words).")
+    else:
+        feedback_parts.append(f"⚠️ Argumentative fluency is an area for improvement. The density of logical connectors is low ({fluency_details.get('connector_density', 0):.1f} per 1000 words), which can make the text feel disconnected.")
+    if 'diversity_issue' in fluency_details:
+        feedback_parts.append(f"   - Suggestion: Consider using a wider variety of connectors to enhance readability. {fluency_details['diversity_issue']}.")
+
+    # 2. Section Connectivity
+    if connectivity_score >= 0.8:
+        feedback_parts.append("✓ Strong connectivity between sections, with clear cross-references.")
+    elif connectivity_score >= 0.6:
+        feedback_parts.append("✓ Adequate connectivity between sections.")
+    else:
+        feedback_parts.append("⚠️ Section connectivity could be stronger. The paper would benefit from more explicit links between sections (e.g., 'as discussed in Section 2').")
+
+    # 3. Narrative Consistency
+    if consistency_score >= 0.8:
+        feedback_parts.append("✓ Excellent narrative consistency with consistent terminology and point of view.")
+    elif consistency_score >= 0.6:
+        feedback_parts.append("✓ Good narrative consistency.")
+    else:
         if 'consistency_issue' in consistency_details:
-            feedback_parts.append(f"⚠️ Narrative Consistency: {consistency_details['consistency_issue']}.")
+            feedback_parts.append(f"⚠️ Narrative consistency needs attention. {consistency_details['consistency_issue']}.")
         if 'pov_issue' in consistency_details:
-            feedback_parts.append(f"{consistency_details['pov_issue']}. "
-                                f"Maintain consistent first-person ('we') or third-person ('this study') throughout.")
-        if consistency_details.get('terminology_inconsistencies', 0) > 0:
-            feedback_parts.append(f"Found {consistency_details['terminology_inconsistencies']} "
-                                f"terminology variations. Ensure consistent use of technical terms.")
-    
-    # Flow feedback
-    if flow_score < 0.7:
+            feedback_parts.append(f"   - Suggestion: {consistency_details['pov_issue']}. Aim for a consistent voice (e.g., stick to 'we' or 'this study').")
+
+    # 4. Logical Flow
+    if flow_score >= 0.8:
+        feedback_parts.append("✓ The paper follows a clear and logical structure (IMRaD).")
+    elif flow_score >= 0.6:
+        feedback_parts.append("✓ The overall structure follows a logical sequence.")
+    else:
         if 'flow_issue' in flow_details:
-            feedback_parts.append(f"⚠️ Logical Flow: {flow_details['flow_issue']}. "
-                                f"Follow the standard structure: Introduction → Methodology → Results → Discussion → Conclusion.")
-        if flow_details.get('conclusion_markers', 0) == 0:
-            feedback_parts.append("Add clear conclusion markers (e.g., 'In conclusion', 'To summarize').")
-        if not flow_details.get('intro_conclusion_link', True):
-            feedback_parts.append("Strengthen the link between introduction and conclusion by referring back to initial objectives.")
-    
-    # Positive feedback
-    if not feedback_parts:
-        strengths = []
-        if fluency_score >= 0.8:
-            strengths.append("excellent use of logical connectors")
-        if connectivity_score >= 0.8:
-            strengths.append("strong cross-references between sections")
-        if consistency_score >= 0.8:
-            strengths.append("consistent terminology and narrative voice")
-        if flow_score >= 0.8:
-            strengths.append("logical section progression")
-        
-        if strengths:
-            feedback_parts.append(f"✓ Strong coherence and cohesion with {', '.join(strengths)}.")
-        else:
-            feedback_parts.append("✓ Good overall coherence and cohesion.")
-    
-    return " ".join(feedback_parts)
+            feedback_parts.append(f"⚠️ The logical flow of sections may be out of order. {flow_details['flow_issue']}. Ensure it follows the standard IMRaD structure.")
+        if 'conclusion_issue' in flow_details:
+            feedback_parts.append(f"   - Suggestion: {flow_details['conclusion_issue']}.")
+
+    return "\n  ".join(feedback_parts)

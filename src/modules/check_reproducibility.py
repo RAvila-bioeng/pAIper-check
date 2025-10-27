@@ -302,51 +302,30 @@ def _check_parameter_specification(text: str) -> float:
 
 
 def _generate_feedback(clarity: float, data: float, materials: float, parameters: float, text: str) -> str:
-    """Generate concise, actionable feedback with context awareness."""
-    issues = []
-    strengths = []
+    """Generate detailed, balanced feedback as a list of points."""
+    feedback_parts = []
     
-    # Calculate overall quality for context
-    overall = (clarity * 0.3 + data * 0.15 + materials * 0.35 + parameters * 0.2)
-    
-    # Generate strengths and issues from sub-scores
-    if clarity >= 0.7:
-        strengths.append("clear and detailed methodology")
-    elif clarity < 0.5:
-        issues.append("Methods lack critical detail - add equipment models, step-by-step procedures, and precise quantities with units")
-    else:
-        issues.append("Methods could be more detailed - consider adding explicit step-by-step procedures or reducing ambiguous language")
-        
+    # --- Strengths ---
+    if clarity >= 0.8:
+        feedback_parts.append("✓ Excellent methodological clarity with specific, unambiguous descriptions.")
     if data >= 0.7:
-        strengths.append("adequate data documentation")
-    elif data < 0.4:
-        issues.append("Data/code availability unclear - provide repository link, DOI, or explicit availability statement")
-    else:
-        issues.append("Consider improving data accessibility (e.g., public repository, supplementary materials)")
+        feedback_parts.append("✓ Good data/code availability statement.")
+    if materials >= 0.8:
+        feedback_parts.append("✓ Materials and equipment are well-specified with vendors and/or model numbers.")
+    if parameters >= 0.8:
+        feedback_parts.append("✓ Experimental parameters are comprehensively specified with precise units.")
 
-    if materials >= 0.7:
-        strengths.append("well-specified materials and equipment")
-    elif materials < 0.5:
-        issues.append("Materials are poorly specified - add vendor names, catalog numbers, and specific models for all equipment and reagents")
-    else:
-        issues.append("Consider adding more specific details for materials, such as catalog numbers or supplier locations")
+    # --- Areas for Improvement ---
+    if clarity < 0.6:
+        feedback_parts.append("⚠️ Methodological clarity could be improved. Consider adding more step-by-step details and reducing vague language (e.g., 'approximately').")
+    if data < 0.5:
+        feedback_parts.append("⚠️ Data/code availability is unclear. A clear statement pointing to a repository or supplementary materials is recommended.")
+    if materials < 0.6:
+        feedback_parts.append("⚠️ Specification of materials is lacking. For key reagents and equipment, provide vendor, model, and catalog numbers.")
+    if parameters < 0.6:
+        feedback_parts.append("⚠️ Key experimental parameters seem to be missing. Ensure all important conditions (temperature, concentration, time, etc.) are stated with precise units.")
 
-    if parameters >= 0.7:
-        strengths.append("comprehensive parameter specification")
-    elif parameters < 0.5:
-        issues.append("Critical experimental parameters are missing - specify all quantities with units (e.g., concentrations, temperatures, times)")
-    else:
-        issues.append("Consider adding more parameter details for all experimental conditions to ensure replicability")
-    
-    # Generate final feedback based on overall quality
-    if overall >= 0.8:
-        return f"Excellent reproducibility, particularly in: {', '.join(strengths)}. Minor areas for improvement: {', '.join(issues)}"
-    
-    elif overall >= 0.7:
-        return f"Good reproducibility with some areas for improvement. Strengths: {', '.join(strengths)}. To improve: {', '.join(issues)}"
-    
-    elif overall >= 0.5:
-        return f"Moderate reproducibility. Key improvements needed: {', '.join(issues)}. Strengths: {', '.join(strengths)}"
-    
-    else:
-        return f"Reproducibility needs significant improvement: {', '.join(issues)}"
+    if not feedback_parts:
+        return "✓ Excellent reproducibility across all criteria. The methods appear to be well-documented and easy to replicate."
+
+    return "\n  ".join(feedback_parts)

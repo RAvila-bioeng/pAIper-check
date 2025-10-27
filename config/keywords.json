@@ -1,0 +1,35 @@
+{
+    "STOP_WORDS": [
+      "this", "that", "with", "from", "they", "have", "been", "were", "said",
+      "each", "which", "their", "time", "will", "about", "could", "there",
+      "after", "first", "well", "also", "where", "much", "some", "very",
+      "when", "make", "more", "over", "think", "help", "good", "same",
+      "many", "most", "other", "new", "way", "may", "say", "use", "man",
+      "find", "give", "year", "work", "part", "take", "get", "place",
+      "made", "live", "through", "back", "before", "line", "right", "too",
+      "means", "old", "any", "tell", "boy", "follow", "came", "want",
+      "show", "around", "form", "three", "small", "set", "put", "end",
+      "why", "again", "turn", "here", "just", "like", "long", "than",
+      "them", "such", "what", "into", "only", "both", "such", "must"
+    ],
+    "CONNECTORS": {
+      "causality": ["therefore", "thus", "hence", "consequently", "as a result", "for this reason"],
+      "contrast": ["however", "nevertheless", "nonetheless", "on the other hand", "in contrast", "conversely", "whereas"],
+      "addition": ["furthermore", "moreover", "additionally", "in addition", "besides", "also"],
+      "sequence": ["firstly", "secondly", "thirdly", "finally", "subsequently", "then", "next"],
+      "conclusion": ["in conclusion", "to conclude", "in summary", "overall", "to sum up"]
+    },
+    "TRANSITION_PHRASES": [
+      "as discussed", "as mentioned", "previously", "in the previous section",
+      "building on", "extending", "following", "based on", "as shown",
+      "as demonstrated", "in line with", "consistent with", "in accordance with"
+    ],
+    "SECTION_KEYWORDS": {
+      "introduction": ["introduction", "background"],
+      "methodology": ["method", "methodology", "materials", "experimental"],
+      "results": ["result", "finding", "observation"],
+      "discussion": ["discussion", "interpretation"],
+      "conclusion": ["conclusion", "summary", "final"]
+    }
+  }
+  

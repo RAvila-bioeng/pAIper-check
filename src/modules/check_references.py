@@ -597,39 +597,59 @@ def _validate_doi_format(doi: str) -> bool:
 
 # ----------------------------- FEEDBACK -----------------------------
 
-def _generate_reference_feedback(*scores) -> str:
-    """
-    Generate comprehensive feedback for reference evaluation.
-    
-    Args:
-        *scores: Variable number of score arguments
+def _generate_reference_feedback(format_score, quality_score, accessibility_score, density_score, 
+                                 recency_score, diversity_score, credibility_score, semantic_score) -> str:
+    """Generate detailed and balanced feedback for reference evaluation."""
+    feedback_parts = []
+
+    # 1. Format
+    if format_score >= 0.8:
+        feedback_parts.append("✓ Citation format is consistent and follows a recognizable academic style.")
+    else:
+        feedback_parts.append("⚠️ Citation format may be inconsistent. Ensure a single, standard style (e.g., APA, IEEE) is used throughout.")
+
+    # 2. Quality/Completeness
+    if quality_score >= 0.8:
+        feedback_parts.append("✓ References are well-formed and contain sufficient bibliographic details (author, year, title, etc.).")
+    else:
+        feedback_parts.append("⚠️ Some references appear incomplete. Ensure all entries include author, year, title, and publication venue.")
+
+    # 3. Accessibility (DOI check)
+    if accessibility_score >= 0.8:
+        feedback_parts.append("✓ Most cited DOIs were successfully verified and are accessible.")
+    elif accessibility_score >= 0.5:
+        feedback_parts.append("✓ A good portion of cited DOIs were verified. Some could not be found.")
+    else:
+        feedback_parts.append("⚠️ Many cited DOIs could not be verified via CrossRef. Check for typos or consider citing more stable sources.")
+
+    # 4. Density
+    if 0.6 < density_score < 1.0: # 0.8-1.0 range
+        feedback_parts.append("✓ Citation density is appropriate for a scientific paper.")
+    else:
+        feedback_parts.append("⚠️ Citation density seems low. Ensure all claims are adequately supported by references.")
+
+    # 5. Recency
+    if recency_score >= 0.8:
+        feedback_parts.append("✓ The bibliography includes a good proportion of recent sources, showing engagement with current research.")
+    else:
+        feedback_parts.append("⚠️ The bibliography may be outdated. It's advisable to include more research from the last 5 years.")
+
+    # 6. Diversity
+    if diversity_score >= 0.7:
+        feedback_parts.append("✓ Good diversity of sources from various journals and publishers.")
+    else:
+        feedback_parts.append("⚠️ Source diversity could be improved. Consider citing a broader range of venues and publication types.")
         
-    Returns:
-        str: Detailed feedback message
-    """
-    labels = ["format", "quality", "access", "density", "recency", "diversity", "credibility", "semantic"]
-    feedbacks = []
-    
-    for label, s in zip(labels, scores):
-        if s < 0.6:
-            if label == "format":
-                feedbacks.append("Citation format needs improvement. Ensure consistent style throughout (APA, IEEE, or Vancouver).")
-            elif label == "quality":
-                feedbacks.append("Reference quality is insufficient. Include complete bibliographic information (authors, title, venue, year).")
-            elif label == "access":
-                feedbacks.append("Some references are inaccessible. Verify DOI links and ensure sources are publicly available.")
-            elif label == "density":
-                feedbacks.append("Citation density is too low. Academic papers typically require 2-5 citations per 100 words.")
-            elif label == "recency":
-                feedbacks.append("References appear outdated. Include recent research (last 5 years) to demonstrate current knowledge.")
-            elif label == "diversity":
-                feedbacks.append("Limited source diversity. Include references from various publishers, venues, and publication types.")
-            elif label == "credibility":
-                feedbacks.append("Source credibility needs improvement. Prioritize peer-reviewed journals and reputable conferences.")
-            elif label == "semantic":
-                feedbacks.append("Some references may lack relevance. Ensure all citations directly support your arguments.")
-    
-    if not feedbacks:
-        return "Excellent reference structure with consistent formatting, high-quality sources, and good accessibility. References demonstrate strong academic rigor and appropriate diversity."
-    
-    return " ".join(feedbacks)
+    # 7. Credibility
+    if credibility_score >= 0.8:
+        feedback_parts.append("✓ References are from credible, high-impact sources.")
+    else:
+        feedback_parts.append("⚠️ The credibility of some sources could be stronger. Prioritize peer-reviewed journals and reputable conferences.")
+
+    # 8. Semantic Relevance
+    if semantic_score >= 0.7:
+        feedback_parts.append("✓ Cited works appear to be semantically relevant to the paper's main topics.")
+    else:
+        feedback_parts.append("⚠️ Some references may lack direct relevance. Ensure every citation strongly supports the specific point being made.")
+
+    return "\n  ".join(feedback_parts)

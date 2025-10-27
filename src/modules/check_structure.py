@@ -3,19 +3,14 @@ from models.score import PillarResult
 
 def evaluate(paper):
     """
-    Evaluate structure and completeness of the paper.
+    Evaluate structure and completeness of the paper based on pre-parsed sections.
     
     Args:
-        paper: Paper object with text content
+        paper: Paper object with a list of Section objects
         
     Returns:
         dict: Score and feedback for structure evaluation
     """
-    text = paper.full_text
-
-    # Normalize for regex, keep original for slicing
-    lowered_text = text.lower()
-
     # Canonical sections and their primary, accepted variants
     section_map = {
         "abstract": [r"abstract", r"summary"],
@@ -27,7 +22,7 @@ def evaluate(paper):
         "references": [r"references", r"bibliography", r"works\s+cited"],
     }
 
-    # --- New: Aliases that are valid but should trigger a suggestion ---
+    # Aliases that are valid but should trigger a suggestion
     section_aliases = {
         "abstract": [r"resumen"],
         "introduction": [r"objetivos", r"introducción"],
@@ -35,57 +30,49 @@ def evaluate(paper):
         "references": [r"bibliograf[íi]a"],
     }
     
-    # Combine maps to find all possible headers
-    all_variants = {**section_map, **section_aliases}
-    for key, aliases in section_aliases.items():
-        if key in all_variants:
-            all_variants[key] = list(set(all_variants[key] + aliases))
-
-    heading_patterns = {
-        canonical: re.compile(
-            rf"(?mi)^(?:\d+\s*[\.)]\s*)?(?:{'|'.join(variants)})\b\s*[:\.)-]?\s*$",
-        )
-        for canonical, variants in all_variants.items()
-    }
-
-    # Find section positions and track which alias was used
-    section_positions = {}
+    # --- Refactored Logic: Use paper.sections ---
+    
+    # 1. Map parsed section titles to canonical names
+    found_canonical_sections = []
     used_aliases = {}
-    for canonical, pattern in heading_patterns.items():
-        matches = list(pattern.finditer(text))
-        if matches:
-            match = matches[0]
-            section_positions[canonical] = match.start()
-            
-            # Check if this match was an alias
-            matched_text = match.group().lower()
-            if canonical in section_aliases:
-                for alias_pattern in section_aliases[canonical]:
-                    if re.search(alias_pattern, matched_text):
-                        used_aliases[canonical] = matched_text.strip()
-                        break
+    
+    all_variants = {**section_map}
+    for key, aliases in section_aliases.items():
+        all_variants[key] = all_variants.get(key, []) + aliases
 
-    # Determine found and missing from an expected core list
+    for section in paper.sections:
+        title_lower = section.title.lower().strip()
+        matched = False
+        for canonical, variants in all_variants.items():
+            for variant_pattern in variants:
+                if re.search(r'\b' + variant_pattern + r'\b', title_lower):
+                    if canonical not in found_canonical_sections: # Add only first match
+                        found_canonical_sections.append(canonical)
+                    
+                    # Check if an alias was used
+                    if canonical in section_aliases and variant_pattern in section_aliases[canonical]:
+                        used_aliases[canonical] = section.title.strip()
+
+                    matched = True
+                    break
+            if matched:
+                break
+
+    # 2. Determine completeness
     expected_sections = [
-        "abstract",
-        "introduction",
-        "methods",
-        "results",
-        "discussion",
-        "conclusion",
-        "references",
+        "abstract", "introduction", "methods", "results", 
+        "discussion", "conclusion", "references",
     ]
-    found_sections = [s for s in expected_sections if s in section_positions]
-    missing_sections = [s for s in expected_sections if s not in section_positions]
+    
+    found_set = set(found_canonical_sections)
+    missing_sections = [s for s in expected_sections if s not in found_set]
+    completeness_score = len(found_set) / len(expected_sections)
 
-    # Completeness score favors core scientific article structure
-    completeness_score = len(found_sections) / len(expected_sections)
+    # 3. Check structure (content length) - reuses existing helper
+    structure_score, short_sections = _check_section_structure(paper.full_text, paper.sections)
 
-    # Structure score based on sections object and per-section content length
-    structure_score, short_sections = _check_section_structure(lowered_text, paper.sections)
-
-    # Section order score: penalize if clearly out of order (when at least 3 are present)
-    order_score, out_of_order = _check_section_order(section_positions, expected_sections)
+    # 4. Check section order
+    order_score, out_of_order = _check_section_order_refactored(found_canonical_sections, expected_sections)
 
     # Title quality
     title_score = _check_title_quality(paper.title)
@@ -172,19 +159,22 @@ def _check_section_structure(text: str, sections: list) -> tuple:
     return max(0.0, score), short_sections
 
 
-def _check_section_order(section_positions: dict, expected_sections: list) -> tuple:
-    """Compute order score and list of out-of-order sections."""
-    present_positions = [(s, section_positions[s]) for s in expected_sections if s in section_positions]
-    if len(present_positions) < 3:
-        return 0.9, []  # not enough signal; be lenient
+def _check_section_order_refactored(found_sections: list, expected_order: list) -> tuple:
+    """
+    Compute order score based on the sequence of found canonical sections.
+    """
+    if len(found_sections) < 3:
+        return 0.9, []  # Not enough sections to reliably determine order
 
-    # Extract positions and check monotonicity
+    # Get the indices of found sections from the expected order
+    indices = [expected_order.index(s) for s in found_sections if s in expected_order]
+    
+    # Check if the indices are monotonically increasing
     out_of_order = []
-    last_pos = -1
-    for s, pos in present_positions:
-        if pos < last_pos:
-            out_of_order.append(s)
-        last_pos = max(last_pos, pos)
+    for i in range(len(indices) - 1):
+        if indices[i] > indices[i+1]:
+            # The section at found_sections[i+1] is out of order
+            out_of_order.append(found_sections[i+1])
 
     if not out_of_order:
         return 1.0, []
@@ -231,48 +221,38 @@ def _generate_structure_feedback(
     out_of_order: list,
     used_aliases: dict,
 ) -> str:
-    """Generate detailed feedback for structure evaluation."""
+    """Generate detailed and balanced feedback for structure evaluation."""
     feedback_parts = []
 
-    if missing_sections:
-        feedback_parts.append(
-            f"Missing essential sections: {', '.join(missing_sections)}."
-        )
-    
-    # --- New: Add suggestions for aliases ---
+    # 1. Completeness Feedback
+    if completeness_score == 1.0:
+        feedback_parts.append("✓ Excellent completeness: All standard sections (Abstract, Introduction, Methods, etc.) are present.")
+    elif completeness_score >= 0.7:
+        feedback_parts.append(f"✓ Good completeness, although some standard sections are missing: {', '.join(missing_sections)}.")
+    else:
+        feedback_parts.append(f"⚠️ Completeness needs improvement. Key sections are missing: {', '.join(missing_sections)}.")
+
+    # 2. Section Order Feedback
+    if not out_of_order:
+        feedback_parts.append("✓ The sections follow a logical and conventional order (IMRaD).")
+    else:
+        feedback_parts.append(f"⚠️ The section order could be improved. Sections found out of order: {', '.join(out_of_order)}. Consider the standard IMRaD flow.")
+
+    # 3. Content Length Feedback
+    if not short_sections:
+        feedback_parts.append("✓ All sections appear to have sufficient content.")
+    else:
+        feedback_parts.append(f"⚠️ Some sections seem too brief: {', '.join(short_sections)}. Ensure they contain enough detail for the reader.")
+
+    # 4. Title Quality Feedback
+    if title_score >= 0.8:
+        feedback_parts.append("✓ The paper has a well-formatted and appropriately long title.")
+    else:
+        feedback_parts.append("⚠️ The title could be improved. Ensure it is descriptive, not too long, and follows standard capitalization rules.")
+
+    # 5. Use of Aliases (informational, not penalizing)
     if used_aliases:
-        alias_feedback = []
-        for canonical, alias in used_aliases.items():
-            alias_feedback.append(f"'{alias}' was used instead of the standard '{canonical}'")
-        feedback_parts.append(
-            "Consider using standard section titles for clarity. " +
-            f"For example: {'; '.join(alias_feedback)}."
-        )
+        alias_feedback = [f"'{alias}' (for '{canonical}')" for canonical, alias in used_aliases.items()]
+        feedback_parts.append(f"• Informational: Non-standard section titles were used: {'; '.join(alias_feedback)}. Consider using standard English terms for broader clarity.")
 
-    if out_of_order:
-        feedback_parts.append(
-            f"Sections appear out of order: {', '.join(out_of_order)}. Consider standard IMRaD flow."
-        )
-
-    if short_sections:
-        feedback_parts.append(
-            f"Some sections seem too brief: {', '.join(short_sections)}. Expand with essential details."
-        )
-
-    if structure_score < 0.7 and not short_sections:
-        feedback_parts.append(
-            "Section structure could be improved with better organization and content distribution."
-        )
-
-    if title_score < 0.7:
-        feedback_parts.append(
-            "Title quality needs improvement. Ensure proper capitalization and appropriate length."
-        )
-
-    # If no other major issues were found, but aliases were used, the main feedback is the suggestion.
-    if not feedback_parts:
-        feedback_parts.append(
-            "Good structure with essential sections present, in order, and well-organized."
-        )
-
-    return " ".join(feedback_parts)
+    return "\n  ".join(feedback_parts)
