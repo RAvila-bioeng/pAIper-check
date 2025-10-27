@@ -1,6 +1,6 @@
 """
 Reproducibility Assessment Module
-A crucial pillar for modern research, centered on methodological transparency.
+Enhanced for all scientific disciplines with optimized code.
 """
 
 import re
@@ -9,273 +9,219 @@ from models.score import PillarResult
 
 
 def evaluate(paper) -> dict:
-    """
-    Evaluate reproducibility aspects of the paper.
-    
-    Args:
-        paper: Paper object with text content
-        
-    Returns:
-        dict: Score and feedback for reproducibility
-    """
+    """Evaluate reproducibility aspects of the paper."""
     text = paper.full_text.lower()
     
-    # Check methodological clarity
     clarity_score = _check_methodological_clarity(text, paper.sections)
-    
-    # Check data availability
     data_score = _check_data_availability(text)
-    
-    # Check code availability
-    code_score = _check_code_availability(text)
-    
-    # Check parameter specification
+    materials_score = _check_materials_specification(text)
     parameter_score = _check_parameter_specification(text)
     
-    # Check replicability indicators
-    replicability_score = _check_replicability_indicators(text)
+    # Weighted average (clarity is most important)
+    overall_score = clarity_score * 0.4 + data_score * 0.25 + materials_score * 0.2 + parameter_score * 0.15
     
-    # Calculate overall score
-    overall_score = (clarity_score + data_score + code_score + parameter_score + replicability_score) / 5
-    
-    # Generate feedback
-    feedback = _generate_reproducibility_feedback(clarity_score, data_score, code_score, parameter_score, replicability_score)
+    feedback = _generate_feedback(clarity_score, data_score, materials_score, parameter_score)
     
     return PillarResult("Reproducibility", overall_score, feedback).__dict__
 
 
 def _check_methodological_clarity(text: str, sections: List) -> float:
-    """Analyze the sufficiency of method descriptions to allow replication."""
+    """
+    Check if methods are clear enough to replicate.
+    Key improvements: vague language detection and specificity checking.
+    """
     score = 1.0
     
-    # Check for detailed methodology section
+    # Find methodology section
     method_section = None
     for section in sections:
-        if 'method' in section.title.lower():
+        if any(kw in section.title.lower() for kw in ['method', 'procedure', 'protocol', 'experimental', 'material']):
             method_section = section.content.lower()
             break
     
     if not method_section:
-        return 0.3  # No methodology section
+        return 0.2  # Critical: no methods = not reproducible
     
-    # Check for specific methodological details
-    methodological_indicators = [
-        'algorithm', 'procedure', 'protocol', 'workflow', 'pipeline',
-        'implementation', 'configuration', 'setup', 'environment',
-        'hardware', 'software', 'framework', 'library', 'tool'
+    # VAGUE LANGUAGE DETECTION (major improvement)
+    # These phrases make replication impossible
+    vague_patterns = [
+        r'\b(approximately|about|around|several|some|many|few|various|numerous)\b(?!\s+\d)',
+        r'\b(appropriate|suitable|standard|conventional|routine|usual)\s+(protocol|procedure|method)\b',
+        r'\b(as needed|as necessary|to taste|until ready|until done|sufficient|adequate|optimal)\b',
     ]
+    vague_count = sum(len(re.findall(p, method_section)) for p in vague_patterns)
     
-    indicator_count = sum(1 for indicator in methodological_indicators if indicator in method_section)
-    
-    if indicator_count < 3:
+    if vague_count > 8:
         score -= 0.4
-    elif indicator_count < 5:
-        score -= 0.2
-    
-    # Check for step-by-step descriptions
-    step_indicators = [
-        r'step\s+\d+', r'first\s*,?\s*second\s*,?\s*third',
-        r'initially\s*,?\s*then\s*,?\s*finally',
-        r'begin\s+by\s*,?\s*next\s*,?\s*after'
-    ]
-    
-    step_count = sum(len(re.findall(pattern, method_section)) for pattern in step_indicators)
-    
-    if step_count == 0:
-        score -= 0.3
-    elif step_count < 3:
+    elif vague_count > 4:
+        score -= 0.25
+    elif vague_count > 1:
         score -= 0.1
     
-    # Check for experimental design details
-    design_indicators = [
-        'control', 'baseline', 'comparison', 'evaluation', 'metric',
-        'dataset', 'training', 'testing', 'validation', 'split'
+    # SPECIFIC DETAILS CHECK (all disciplines)
+    # Equipment, instruments, software
+    specificity_patterns = [
+        # Equipment/instruments with models
+        r'\b(model|type|series)\s+[A-Z0-9-]+',
+        # Measurements with units (critical!)
+        r'\d+\.?\d*\s*(ml|µl|l|g|mg|µg|kg|mm|cm|m|nm|µm|°c|celsius|min|h|hour|s|sec|rpm|hz|mhz|psi|pa|m|mm)',
+        # Software/versions
+        r'\b(version|v\.?)\s*\d+',
+        # Catalog numbers
+        r'\b(cat|catalog|product)\s*(number|no|#)[:\s]*[A-Z0-9-]+',
+        # Vendors
+        r'\b(sigma|merck|thermo|fisher|invitrogen|promega|qiagen|agilent|roche)\b',
+        # Statistical methods
+        r'\b(t-test|anova|regression|p-value|confidence interval|n\s*=\s*\d+)\b',
+        # Sample details
+        r'\d+\s+(participants|subjects|patients|samples|specimens|animals)',
     ]
     
-    design_count = sum(1 for indicator in design_indicators if indicator in method_section)
+    specific_count = sum(len(re.findall(p, method_section)) for p in specificity_patterns)
     
-    if design_count < 3:
+    if specific_count < 5:
+        score -= 0.35
+    elif specific_count < 10:
         score -= 0.2
+    elif specific_count >= 20:
+        score += 0.1
     
-    return max(0.0, score)
+    # PROCEDURAL CLARITY (step-by-step)
+    step_patterns = [
+        r'(step|stage|phase)\s+(\d+|one|two|three|i{1,3})',
+        r'(first|initially)[,:].*?(then|next|subsequently)',
+        r'^\s*\d+\.\s+\w',  # numbered lists
+    ]
+    steps = sum(len(re.findall(p, method_section, re.MULTILINE)) for p in step_patterns)
+    
+    if steps == 0:
+        score -= 0.25
+    elif steps < 2:
+        score -= 0.1
+    
+    # ESSENTIAL CONTROLS
+    controls = len(re.findall(r'\b(control|baseline|replicate|triplicate|randomiz)', method_section))
+    if controls < 2:
+        score -= 0.15
+    
+    return max(0.0, min(1.0, score))
 
 
 def _check_data_availability(text: str) -> float:
-    """Verification of mentions regarding accessibility to data."""
+    """Check if data/code can be accessed for replication."""
     score = 0.0
     
-    # Check for data availability statements
-    availability_phrases = [
-        'data is available', 'dataset is available', 'data can be accessed',
-        'data is provided', 'supplementary data', 'data repository',
-        'github', 'figshare', 'zenodo', 'dataverse', 'dryad',
-        'upon request', 'contact the authors', 'data available on request'
-    ]
+    # Public repositories (best practice)
+    repos = r'\b(github|gitlab|zenodo|figshare|dryad|dataverse|osf|genbank|geo|arxiv)\.?\b'
+    if re.search(repos, text):
+        score = 1.0
     
-    availability_count = sum(1 for phrase in availability_phrases if phrase in text)
-    
-    if availability_count > 0:
+    # DOI provided
+    elif re.search(r'\bdoi[:\s]+10\.\d{4,}/[^\s]+', text):
         score = 0.8
-        if any(repo in text for repo in ['github', 'figshare', 'zenodo', 'dataverse', 'dryad']):
-            score = 1.0  # Public repository mentioned
     
-    # Check for data description
-    description_phrases = [
-        'dataset contains', 'data consists of', 'sample size',
-        'number of samples', 'data points', 'records',
-        'features', 'variables', 'dimensions'
-    ]
+    # Availability statement
+    elif re.search(r'(data|code|software)\s+(is|are|will be)\s+(available|accessible)', text):
+        score = 0.6
     
-    description_count = sum(1 for phrase in description_phrases if phrase in text)
+    # Upon request (less ideal)
+    elif re.search(r'(available\s+)?upon\s+(reasonable\s+)?request', text):
+        score = 0.3
     
-    if description_count > 0:
+    # Data described (at least documented)
+    if re.search(r'(dataset|data)\s+(contains?|consists?\s+of)|sample\s+size|n\s*=\s*\d+', text):
         score += 0.1
     
     return min(1.0, score)
 
 
-def _check_code_availability(text: str) -> float:
-    """Check for code availability and sharing."""
-    score = 0.0
+def _check_materials_specification(text: str) -> float:
+    """
+    Check if materials, equipment, and reagents are specified with enough detail.
+    Critical for experimental reproducibility.
+    """
+    score = 1.0
     
-    # Check for code availability statements
-    code_phrases = [
-        'code is available', 'source code', 'implementation is available',
-        'github repository', 'code repository', 'software is available',
-        'algorithm implementation', 'code can be accessed'
-    ]
+    # Equipment models/types
+    equipment = len(re.findall(r'\b(model|type|series)\s+[A-Z0-9-]+', text))
+    if equipment == 0:
+        score -= 0.3
     
-    code_count = sum(1 for phrase in code_phrases if phrase in text)
+    # Vendor information (allows others to obtain same materials)
+    vendors = len(re.findall(
+        r'\b(sigma|merck|thermo|fisher|invitrogen|promega|qiagen|bio-rad|roche|agilent)\b',
+        text, re.IGNORECASE
+    ))
+    if vendors == 0:
+        score -= 0.25
     
-    if code_count > 0:
-        score = 0.8
-        if 'github' in text:
-            score = 1.0  # GitHub repository mentioned
+    # Catalog numbers (specific identification)
+    catalogs = len(re.findall(r'\b(cat|catalog|product)\s*(no|number|#)[:\s]*[A-Z0-9-]+', text, re.IGNORECASE))
+    if catalogs > 0:
+        score += 0.15
     
-    # Check for programming language mentions (indicates code existence)
-    languages = ['python', 'r', 'matlab', 'java', 'c++', 'javascript', 'ruby']
-    language_count = sum(1 for lang in languages if lang in text)
+    # Software versions (for computational work)
+    versions = len(re.findall(r'\b(version|v\.?|ver\.?)\s*\d+(\.\d+)*', text))
+    software_mentioned = bool(re.search(r'\b(software|program|package|python|r|matlab|spss)\b', text))
     
-    if language_count > 0:
-        score += 0.2
+    if software_mentioned and versions == 0:
+        score -= 0.3  # Software used but no versions = not reproducible
+    elif versions > 0:
+        score += 0.1
     
-    return min(1.0, score)
+    return max(0.0, min(1.0, score))
 
 
 def _check_parameter_specification(text: str) -> float:
-    """Check for detailed parameter specifications."""
+    """Check if experimental/analytical parameters are precisely specified."""
     score = 1.0
     
-    # Check for hyperparameter mentions
-    hyperparameter_indicators = [
-        'learning rate', 'batch size', 'epoch', 'parameter', 'hyperparameter',
-        'threshold', 'window size', 'kernel size', 'regularization',
-        'dropout', 'momentum', 'optimizer', 'activation function'
-    ]
+    # Numerical values WITH units (most critical)
+    values_with_units = re.findall(
+        r'\b\d+\.?\d*\s*(ml|µl|g|mg|°c|min|h|mm|cm|m|rpm|hz|m|mm|%)\b',
+        text
+    )
     
-    param_count = sum(1 for indicator in hyperparameter_indicators if indicator in text)
-    
-    if param_count == 0:
-        score = 0.3
-    elif param_count < 3:
-        score -= 0.3
-    elif param_count < 5:
-        score -= 0.1
-    
-    # Check for numerical values (indicating specific parameters)
-    numerical_values = re.findall(r'\b\d+\.?\d*\b', text)
-    unique_values = len(set(numerical_values))
-    
-    if unique_values < 5:
+    if len(values_with_units) < 3:
+        score -= 0.4
+    elif len(values_with_units) < 7:
         score -= 0.2
     
-    # Check for configuration details
-    config_indicators = [
-        'configuration', 'settings', 'parameters', 'default values',
-        'experimental setup', 'system configuration'
-    ]
+    # Parameter keywords
+    params = len(re.findall(
+        r'\b(temperature|pressure|ph|concentration|dose|flow rate|voltage|'
+        r'learning rate|batch size|threshold|alpha|p-value|significance)\b',
+        text
+    ))
     
-    config_count = sum(1 for indicator in config_indicators if indicator in text)
-    
-    if config_count == 0:
-        score -= 0.2
-    
-    return max(0.0, score)
-
-
-def _check_replicability_indicators(text: str) -> float:
-    """Evaluate theoretical possibility of reproducing experiments or analysis."""
-    score = 1.0
-    
-    # Check for reproducibility statements
-    repro_phrases = [
-        'reproducible', 'replication', 'replicable', 'reproduce',
-        'reproducibility', 'replication study', 'can be reproduced'
-    ]
-    
-    repro_count = sum(1 for phrase in repro_phrases if phrase in text)
-    
-    if repro_count == 0:
+    if params < 3:
         score -= 0.3
     
-    # Check for limitations and constraints
-    limitation_phrases = [
-        'limitation', 'constraint', 'restriction', 'limitation of this study',
-        'future work', 'improvement', 'enhancement'
-    ]
+    # Ranges specified (good practice)
+    ranges = len(re.findall(r'\b\d+\.?\d*\s*(to|-|–)\s*\d+\.?\d*', text))
+    if ranges > 0:
+        score += 0.1
     
-    limitation_count = sum(1 for phrase in limitation_phrases if phrase in text)
-    
-    if limitation_count > 0:
-        score += 0.1  # Acknowledging limitations is good for reproducibility
-    
-    # Check for validation and verification
-    validation_phrases = [
-        'validation', 'verification', 'confirmed', 'validated',
-        'cross-validation', 'independent validation'
-    ]
-    
-    validation_count = sum(1 for phrase in validation_phrases if phrase in text)
-    
-    if validation_count == 0:
-        score -= 0.2
-    
-    # Check for baseline comparisons
-    baseline_phrases = [
-        'baseline', 'comparison', 'compared to', 'state-of-the-art',
-        'existing methods', 'previous work'
-    ]
-    
-    baseline_count = sum(1 for phrase in baseline_phrases if phrase in text)
-    
-    if baseline_count < 2:
-        score -= 0.2
-    
-    return max(0.0, score)
+    return max(0.0, min(1.0, score))
 
 
-def _generate_reproducibility_feedback(clarity_score: float, data_score: float, 
-                                     code_score: float, parameter_score: float, 
-                                     replicability_score: float) -> str:
-    """Generate detailed feedback for reproducibility."""
-    feedback_parts = []
+def _generate_feedback(clarity: float, data: float, materials: float, parameters: float) -> str:
+    """Generate concise, actionable feedback."""
+    issues = []
     
-    if clarity_score < 0.7:
-        feedback_parts.append("Methodology description lacks sufficient detail for replication. Provide more step-by-step procedures.")
+    if clarity < 0.6:
+        issues.append("Methods lack sufficient detail - reduce vague language (e.g., 'several', 'appropriate') and add specific quantities, equipment models, and step-by-step procedures")
     
-    if data_score < 0.5:
-        feedback_parts.append("Data availability information is missing or unclear. Specify how data can be accessed.")
+    if data < 0.5:
+        issues.append("Data availability unclear - provide repository link, DOI, or clear access instructions")
     
-    if code_score < 0.5:
-        feedback_parts.append("Code availability is not mentioned. Consider sharing implementation details or code repository.")
+    if materials < 0.6:
+        issues.append("Materials insufficiently specified - add vendor names, catalog numbers, and equipment models/versions")
     
-    if parameter_score < 0.7:
-        feedback_parts.append("Parameter specifications are insufficient. Provide detailed hyperparameter values and configurations.")
+    if parameters < 0.6:
+        issues.append("Parameters not precisely specified - include all numerical values with units (temperature, concentrations, durations, etc.)")
     
-    if replicability_score < 0.7:
-        feedback_parts.append("Reproducibility aspects need improvement. Add validation details and baseline comparisons.")
+    if not issues:
+        return "Strong reproducibility with clear methods, accessible data, and precise specifications."
     
-    if not feedback_parts:
-        feedback_parts.append("Good reproducibility practices with clear methodology, data access, and validation details.")
-    
-    return " ".join(feedback_parts)
+    return " • ".join(issues)

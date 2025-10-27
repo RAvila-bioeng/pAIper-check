@@ -303,16 +303,19 @@ def extract_sections_fallback(text: str) -> List[Section]:
     for section_name, patterns in section_keywords.items():
         for pattern in patterns:
             # Look for section with flexible matching
-            regex = rf'(?:^|\n)\s*(?:\d+\.?\s*)?{pattern}\s*[:\-]?\s*\n+(.*?)(?=\n\s*(?:\d+\.?\s*)?(?:{"| ".join([p.replace("\\b", "").replace("\\", "") for p in sum(section_keywords.values(), [])])})|$)'
+            # Create the keyword pattern string *before* the f-string
+            all_keywords = sum(section_keywords.values(), [])
+            cleaned_keywords = [p.replace("\\b", "").replace("\\", "") for p in all_keywords]
+            keywords_pattern = "| ".join(cleaned_keywords)
+
+            pattern = rf'(?:^|\n)\s*(?:\d+\.?\s*)?{pattern}\s*[:\-]?\s*\n+(.*?)(?=\n\s*(?:\d+\.?\s*)?(?:{keywords_pattern})|$)'
             
-            match = re.search(regex, text, re.DOTALL | re.IGNORECASE | re.MULTILINE)
+            match = re.search(pattern, text, re.DOTALL | re.IGNORECASE | re.MULTILINE)
             if match:
                 content = match.group(1).strip()
-                content = re.sub(r'\s+', ' ', content)
-                
                 if len(content) > 100:
                     sections.append(Section(title=section_name, content=content[:5000]))
-                    break  # Found this section, move to next
+                    break
     
     return sections
 
