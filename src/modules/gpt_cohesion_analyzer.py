@@ -188,10 +188,16 @@ Do not repeat the draft; provide a new, higher-quality JSON object."""
                 }
             }
         except Exception as e:
+            # Check for authentication errors
+            if "401" in str(e):
+                error_message = "AuthenticationError: Invalid OpenAI API key."
+            else:
+                error_message = str(e)
+
             return {
                 'success': False, 
-                'error': str(e), 
-                'analysis': {'score': 0.0, 'feedback': f'Analysis failed: {e}'},
+                'error': error_message, 
+                'analysis': {'score': 0.0, 'feedback': f'Analysis failed: {error_message}'},
                 'cost_info': {'cost_usd': 0.0, 'input_tokens': 0, 'output_tokens': 0}
             }
 

@@ -1,5 +1,6 @@
 import os
 import yaml
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
@@ -142,14 +143,19 @@ def setup_logging(config: Optional[Config] = None):
     
     log_level = getattr(logging, config.get_log_level().upper(), logging.INFO)
     
+    # Main logging configuration
     logging.basicConfig(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=log_level,
         handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('paiper_check.log')
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler('paiper_check.log', encoding='utf-8')
         ]
     )
+    
+    # Reconfigure stdout to use UTF-8
+    if isinstance(sys.stdout, logging.StreamHandler):
+        sys.stdout.reconfigure(encoding='utf-8')
     
     # Set specific logger levels
     logging.getLogger('openai').setLevel(logging.WARNING)

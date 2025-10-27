@@ -96,11 +96,13 @@ def evaluate(paper, use_gpt=False) -> dict:
         recency_score, diversity_score, credibility_score, semantic_score
     )
     # 🔹 Si se usa la opción --use-chatGPT, activar el análisis avanzado con Perplexity
-    if 'use_gpt' in locals() and use_gpt:
+    if use_gpt:
         try:
-            from src.integrations.perplexity_api import analyze_references
+            from integrations.perplexity_api import analyze_references
             gpt_feedback = analyze_references(references)
             feedback += f"\n\n🔍 Perplexity Sonar Pro Analysis:\n{gpt_feedback}"
+        except ImportError:
+            feedback += f"\n\n⚠️ Perplexity integration not found. Please ensure 'integrations/perplexity_api.py' exists."
         except Exception as e:
             feedback += f"\n\n⚠️ Perplexity analysis failed: {e}"
     return PillarResult("References & Citations", overall_score, feedback).__dict__
@@ -173,7 +175,7 @@ def _check_reference_quality(references: List[Reference]) -> float:
         txt = ref.text.lower()
         
         # More robust author detection
-        has_author = bool(re.findall(r"[A-Z][a-z]+,\s*[A-Z]\.|et\s+al\.|and\s+[A-Z][a-z]+", ref.text, re.IGNORECASE))
+        has_author = bool(re.findall(r"[A-Z][a-z]+,\s*[A-Z]\.|et\s+al\.|and\s+[A-Z][a-z]+|[A-Z]\.\s*[A-Z][a-z]+|[A-Z][a-z]+\s+[A-Z]\.", ref.text, re.IGNORECASE))
         
         # Year detection (1900-2099)
         has_year = bool(re.search(r"\b(19|20)\d{2}\b", txt))
@@ -198,10 +200,10 @@ def _check_reference_quality(references: List[Reference]) -> float:
         
     completeness = complete_refs / len(references)
     
-    if completeness < 0.6:
-        score -= 0.5
-    elif completeness < 0.8:
-        score -= 0.3
+    if completeness < 0.5:
+        score -= 0.4
+    elif completeness < 0.7:
+        score -= 0.2
     elif completeness < 0.9:
         score -= 0.1
     

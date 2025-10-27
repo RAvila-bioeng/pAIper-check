@@ -112,7 +112,7 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
             'quality_metrics': basic_result['score_breakdown'],
             'detailed_analysis': basic_result['detailed_analysis']
         }
-        basic_result['gpt_analysis'] = enhance_quality_with_gpt(paper, gpt_analysis_data)
+        basic_result['gpt_analysis'] = enhance_quality_with_gpt(paper, gpt_analysis_data, force_analysis=True)
 
     return basic_result
 

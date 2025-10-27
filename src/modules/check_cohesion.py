@@ -100,7 +100,7 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
             'key_sections': {s.title: s.content for s in sections[:2]} if sections else {}
         }
         basic_result['gpt_analysis_data'] = gpt_analysis_data
-        return enhance_coherence_with_gpt(paper, basic_result)
+        return enhance_coherence_with_gpt(paper, basic_result, force_analysis=True)
     
     return basic_result
 

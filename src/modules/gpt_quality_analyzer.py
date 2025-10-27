@@ -57,6 +57,7 @@ if GPT_AVAILABLE:
             total_cost = 0
             total_tokens = {'input': 0, 'output': 0}
             
+            all_successful = True
             for name, module_func in modules.items():
                 result = module_func(paper, gpt_analysis_data)
                 sub_results[name] = result
@@ -64,6 +65,9 @@ if GPT_AVAILABLE:
                     total_cost += result.get('cost_info', {}).get('cost_usd', 0)
                     total_tokens['input'] += result.get('cost_info', {}).get('input_tokens', 0)
                     total_tokens['output'] += result.get('cost_info', {}).get('output_tokens', 0)
+                else:
+                    all_successful = False
+
             
             # Aggregate results
             final_score, issues, suggestions, strengths = self._aggregate_results(sub_results, basic_score)
@@ -76,6 +80,28 @@ if GPT_AVAILABLE:
                 "strengths": strengths,
                 "final_verdict": self._get_final_verdict(final_score)
             }
+
+            # If any module failed, the overall analysis is not successful
+            if not all_successful:
+                # Find the first error to report
+                first_error = "Unknown error"
+                for res in sub_results.values():
+                    if not res.get("success"):
+                        first_error = res.get("error", "Unknown error")
+                        break
+                return {
+                    'success': False,
+                    'error': first_error,
+                    'analysis': final_analysis,
+                    'cost_info': {
+                        'cost_usd': round(total_cost, 4),
+                        'input_tokens': total_tokens['input'],
+                        'output_tokens': total_tokens['output'],
+                        'total_tokens': total_tokens['input'] + total_tokens['output']
+                    },
+                    'model': 'gpt-4o-mini'
+                }
+
             
             return {
                 'success': True,
@@ -212,10 +238,16 @@ if GPT_AVAILABLE:
                     }
                 }
             except Exception as e:
+                # Check for authentication errors
+                if "401" in str(e):
+                    error_message = "AuthenticationError: Invalid OpenAI API key."
+                else:
+                    error_message = str(e)
+
                 return {
                     'success': False,
-                    'error': str(e),
-                    'analysis': {'score': 0.0, 'feedback': f'Analysis failed: {e}'},
+                    'error': error_message,
+                    'analysis': {'score': 0.0, 'feedback': f'Analysis failed: {error_message}'},
                     'cost_info': {'cost_usd': 0.0, 'input_tokens': 0, 'output_tokens': 0}
                 }
         
@@ -269,12 +301,12 @@ if GPT_AVAILABLE:
         gpt_analysis_data = basic_result.get('gpt_analysis_data', {})
         
         # Decide if GPT analysis is needed
-        needs_gpt = force_analysis
-
+        needs_gpt = force_analysis or analyzer.should_use_gpt_analysis(basic_score, basic_feedback)
         
         if not needs_gpt:
             basic_result['gpt_analysis'] = {
                 'used': False,
+                'success': True, # It didn't fail, it was just skipped
                 'reason': 'Basic analysis sufficient (score >= 0.7)',
                 'cost_saved': 0.003
             }
@@ -293,10 +325,19 @@ if GPT_AVAILABLE:
             if gpt_score is not None:
                 # Weighted average: 40% basic, 60% GPT
                 basic_result['score'] = (basic_score * 0.4) + (gpt_score * 0.6)
+                if 'score_breakdown' not in basic_result:
+                    basic_result['score_breakdown'] = {}
                 basic_result['score_breakdown']['gpt_enhanced'] = True
         
-        # Add GPT analysis to result
-        basic_result['gpt_analysis'] = gpt_result
+        # Add GPT analysis to result, ensuring 'success' and 'error' are present
+        final_gpt_result = {
+            'used': True,
+            'success': gpt_result.get('success', False),
+            'analysis': gpt_result.get('analysis', {}),
+            'cost_info': gpt_result.get('cost_info', {}),
+            'error': gpt_result.get('error')
+        }
+        basic_result['gpt_analysis'] = final_gpt_result
         
         return basic_result
 
@@ -343,5 +384,10 @@ if GPT_AVAILABLE:
 else:
     # Define dummy functions if GPT is not available
     def enhance_quality_with_gpt(paper, basic_result: Dict, force_analysis: bool = False) -> Dict:
-        basic_result['gpt_analysis'] = {'used': False, 'reason': 'GPT dependencies not installed.'}
+        basic_result['gpt_analysis'] = {
+            'used': False, 
+            'success': False,
+            'reason': 'GPT dependencies not installed.',
+            'error': 'The "openai" package is not installed. Please install it with "pip install openai".'
+        }
         return basic_result

@@ -148,10 +148,10 @@ def process_single_paper(input_path, args):
         
         # Check if GPT was actually used
         gpt_info = results["cohesion"].get("gpt_analysis", {})
-        if gpt_info.get("used"):
+        if gpt_info.get("success"):
             cost = gpt_info.get("cost_info", {}).get("cost_usd", 0)
             logger.info(f"  → GPT analysis performed (cost: ${cost:.4f})")
-        else:
+        elif gpt_info.get("used") is False:
             reason = gpt_info.get("reason", "Unknown")
             logger.info(f"  → GPT analysis skipped: {reason}")
     else:
@@ -163,7 +163,7 @@ def process_single_paper(input_path, args):
     
     # References evaluation
     logger.info("Evaluating references...")
-    results["references"] = check_references.evaluate(paper)
+    results["references"] = check_references.evaluate(paper, use_gpt=args.use_chatgpt)
     
     # Quality evaluation (with optional GPT)
     logger.info("Evaluating scientific quality...")
@@ -173,10 +173,10 @@ def process_single_paper(input_path, args):
         
         # Check if GPT was actually used
         gpt_info = results["quality"].get("gpt_analysis", {})
-        if gpt_info.get("used"):
+        if gpt_info.get("success"):
             cost = gpt_info.get("cost_info", {}).get("cost_usd", 0)
             logger.info(f"  → GPT analysis performed (cost: ${cost:.4f})")
-        else:
+        elif gpt_info.get("used") is False:
             reason = gpt_info.get("reason", "Unknown")
             logger.info(f"  → GPT analysis skipped: {reason}")
     else:
@@ -356,6 +356,52 @@ def print_linguistic_errors(ling_result, max_errors=30):
         print(f"\n  ... and {remaining} more errors")
         print(f"  💡 Use --max-errors {total_errors} to see all errors")
 
+def print_gpt_analysis_section(title: str, gpt_info: dict):
+    """Helper to print a generic GPT analysis section."""
+    if not gpt_info:
+        return
+        
+    print("\n" + "-"*70)
+    print(f"🤖 GPT-4o-mini Deep Analysis: {title}")
+    print("-"*70)
+
+    if not gpt_info.get("success"):
+        error = gpt_info.get('error', 'Unknown error')
+        print(f"  Analysis Failed: {error}")
+        return
+    
+    cost_info = gpt_info.get("cost_info", {})
+    print(f"  Cost: ${cost_info.get('cost_usd', 0):.4f}")
+    print(f"  Tokens: {cost_info.get('total_tokens', 0)} (input: {cost_info.get('input_tokens', 0)}, output: {cost_info.get('output_tokens', 0)})")
+    
+    analysis = gpt_info.get("analysis", {})
+    if analysis:
+        print(f"  Overall GPT Score: {analysis.get('overall_score', 0):.2f} - Verdict: {analysis.get('final_verdict', 'N/A')}")
+        
+        if 'sub_modules' in analysis:
+            print(f"\n  {title} Sub-modules:")
+            for name, sub in analysis['sub_modules'].items():
+                if sub:
+                    print(f"    - {name.replace('_', ' ').title():.<25} {sub.get('score', 0):.2f} - {sub.get('feedback', 'N/A')}")
+
+        issues = analysis.get('issues', [])
+        if issues:
+            print("\n  Issues Found:")
+            for issue in issues:
+                print(f"    - {issue}")
+        
+        suggestions = analysis.get('suggestions', [])
+        if suggestions:
+            print("\n  Recommendations:")
+            for suggestion in suggestions:
+                print(f"    - {suggestion}")
+        
+        strengths = analysis.get('strengths', [])
+        if strengths:
+            print("\n  Strengths:")
+            for strength in strengths:
+                print(f"    - {strength}")
+
 def print_results(paper, overall_score, results, weights, args):
     """Print formatted results"""
     
@@ -417,45 +463,14 @@ def print_results(paper, overall_score, results, weights, args):
             print_linguistic_errors(result, args.max_errors)
     
     # Show GPT specific info if used
-    if args.use_chatgpt and "cohesion" in results:
-        gpt_info = results["cohesion"].get("gpt_analysis", {})
+    if args.use_chatgpt:
+        # Cohesion GPT analysis
+        if "cohesion" in results and results["cohesion"].get("gpt_analysis", {}).get("success"):
+            print_gpt_analysis_section("Cohesion", results["cohesion"]["gpt_analysis"])
         
-        if gpt_info.get("success"):
-            print("\n" + "-"*70)
-            print("🤖 GPT-4o-mini Deep Analysis:")
-            print("-"*70)
-            
-            cost_info = gpt_info.get("cost_info", {})
-            print(f"  Cost: ${cost_info.get('cost_usd', 0):.4f}")
-            print(f"  Tokens: {cost_info.get('total_tokens', 0)} (input: {cost_info.get('input_tokens', 0)}, output: {cost_info.get('output_tokens', 0)})")
-            
-            analysis = gpt_info.get("analysis", {})
-            if analysis:
-                print(f"  Overall GPT Score: {analysis.get('overall_score', 0):.2f} - Verdict: {analysis.get('final_verdict', 'N/A')}")
-                
-                if 'sub_modules' in analysis:
-                    print("\n  Cohesion Sub-modules:")
-                    for name, sub in analysis['sub_modules'].items():
-                        if sub:
-                            print(f"    - {name.replace('_', ' ').title():.<25} {sub.get('score', 0):.2f} - {sub.get('feedback', 'N/A')}")
-
-                issues = analysis.get('issues', [])
-                if issues:
-                    print("\n  Issues Found:")
-                    for issue in issues:
-                        print(f"    - {issue}")
-                
-                suggestions = analysis.get('suggestions', [])
-                if suggestions:
-                    print("\n  Recommendations:")
-                    for suggestion in suggestions:
-                        print(f"    - {suggestion}")
-                
-                strengths = analysis.get('strengths', [])
-                if strengths:
-                    print("\n  Strengths:")
-                    for strength in strengths:
-                        print(f"    - {strength}")
+        # Quality GPT analysis
+        if "quality" in results and results["quality"].get("gpt_analysis"):
+            print_gpt_analysis_section("Scientific Quality", results["quality"]["gpt_analysis"])
     
     # GPT cost report
     if args.gpt_report and "cohesion" in results:
