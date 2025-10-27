@@ -663,7 +663,7 @@ def _generate_reference_feedback(format_score, quality_score, accessibility_scor
 
 
 # Esto sirve para probar el análisis de referencias con Perplexity desde la terminal
-if _name_ == "_main_":
+if __name__ == "__main__":
     import argparse
     from src.perplexity_integration import analyze_references
 
