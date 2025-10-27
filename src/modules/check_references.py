@@ -37,7 +37,7 @@ _api_cache = {}
 _cache_expiry = 3600  # 1 hour
 
 
-def evaluate(paper) -> dict:
+def evaluate(paper, use_gpt=False) -> dict:
     """
     Evaluate references and citation quality using advanced logic.
     
@@ -95,7 +95,14 @@ def evaluate(paper) -> dict:
         format_score, quality_score, accessibility_score, density_score, 
         recency_score, diversity_score, credibility_score, semantic_score
     )
-
+    # 🔹 Si se usa la opción --use-chatGPT, activar el análisis avanzado con Perplexity
+    if 'use_gpt' in locals() and use_gpt:
+        try:
+            from src.integrations.perplexity_api import analyze_references
+            gpt_feedback = analyze_references(references)
+            feedback += f"\n\n🔍 Perplexity Sonar Pro Analysis:\n{gpt_feedback}"
+        except Exception as e:
+            feedback += f"\n\n⚠️ Perplexity analysis failed: {e}"
     return PillarResult("References & Citations", overall_score, feedback).__dict__
 
 
@@ -653,3 +660,26 @@ def _generate_reference_feedback(format_score, quality_score, accessibility_scor
         feedback_parts.append("⚠️ Some references may lack direct relevance. Ensure every citation strongly supports the specific point being made.")
 
     return "\n  ".join(feedback_parts)
+
+
+# Esto sirve para probar el análisis de referencias con Perplexity desde la terminal
+if _name_ == "_main_":
+    import argparse
+    from src.perplexity_integration import analyze_references
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--use-chatGPT", action="store_true", help="Enable Perplexity reference analysis")
+    args = parser.parse_args()
+
+    if args.use_chatGPT:
+        from models.paper import Paper
+        import json
+
+        sample_paper = Paper(full_text="Sample text", references=[])
+
+        print("🔍 Running Perplexity Sonar Pro analysis on references...")
+        try:
+            analysis = analyze_references(sample_paper.references)
+            print("\n🧠 Perplexity Sonar Pro feedback:\n", analysis)
+        except Exception as e:
+            print(f"❌ Error using Perplexity API: {e}")
