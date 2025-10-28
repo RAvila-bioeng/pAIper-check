@@ -22,46 +22,55 @@ from models.score import PillarResult
 def _check_reference_quantity(references: List[Reference]) -> Tuple[float, str]:
     """Scores the quantity of references."""
     count = len(references)
+    
     if count < 10:
-        score = 0.4
-        feedback = f"⚠️ The paper has only {count} references, which may be insufficient for a scientific publication."
-    elif 15 <= count <= 50:
-        score = 1.0
-        feedback = f"✅ The paper has a healthy number of references ({count})."
-    elif count > 50:
-        score = 0.8
-        feedback = f"⚠️ The paper has a high number of references ({count}), which could suggest a lack of focus."
-    else: # 10 <= count < 15
+        score = 0.3
+        feedback = f"⚠️ The paper has only {count} references, which is too few for a scientific publication."
+    elif 10 <= count < 15:
         score = 0.7
         feedback = f"✅ The number of references ({count}) is acceptable, though slightly low."
+    elif 15 <= count <= 60:
+        score = 1.0
+        feedback = f"✅ The paper has a healthy number of references ({count})."
+    else:  # count > 60
+        score = 0.8
+        feedback = f"⚠️ The paper has a high number of references ({count}), which could suggest a lack of focus."
+    
     return score, feedback
 
-def _check_reference_recency(references: List[Reference]) -> Tuple[float, str]:
-    """Scores the recency of references."""
+
+def _check_reference_recency(references: List['Reference']) -> Tuple[float, str]:
+    """Scores the recency of references based on detected publication years."""
     years = []
+    current_year = datetime.now().year
+
     for ref in references:
-        # Find years between 1950 and the current year + 1
-        found = re.findall(r'\b(19[5-9]\d|20\d{2})\b', ref.text)
+        # Buscar todos los años válidos entre 1950 y el año actual
+        found = re.findall(r'\b(19[5-9]\d|20[0-4]\d|2050)\b', ref.text)
+        # Escoger el año más reciente encontrado en esa referencia
         if found:
-            years.append(int(found[0]))
+            years.append(max(map(int, found)))
 
     if not years:
         return 0.3, "⚠️ Could not determine the publication year for most references."
 
-    current_year = datetime.now().year
+    # Calcular la proporción de referencias con menos de 10 años
     recent_count = sum(1 for y in years if y >= current_year - 10)
     ratio = recent_count / len(years)
 
+    # Asignar puntuación y feedback
     if ratio >= 0.7:
         score = 1.0
-        feedback = f"✅ A high proportion ({int(ratio*100)}%) of references are from the last 10 years."
+        feedback = f"✅ A high proportion ({int(ratio * 100)}%) of references are from the last 10 years."
     elif ratio >= 0.4:
         score = 0.7
-        feedback = f"✅ A reasonable proportion ({int(ratio*100)}%) of references are recent."
+        feedback = f"🟡 A reasonable proportion ({int(ratio * 100)}%) of references are recent."
     else:
         score = 0.4
-        feedback = f"⚠️ Many references seem outdated. Only {int(ratio*100)}% are from the last 10 years."
+        feedback = f"⚠️ Many references seem outdated. Only {int(ratio * 100)}% are from the last 10 years."
+
     return score, feedback
+
 
 def _check_format_consistency(references: List[Reference]) -> Tuple[float, str]:
     """Scores the consistency of the reference format using heuristics."""
