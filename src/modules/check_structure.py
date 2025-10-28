@@ -1,12 +1,13 @@
 import re
 from models.score import PillarResult
 
-def evaluate(paper):
+def evaluate(paper, use_gpt=False):
     """
     Evaluate structure and completeness of the paper based on pre-parsed sections.
     
     Args:
         paper: Paper object with a list of Section objects
+        use_gpt (bool): Flag to enable Perplexity analysis.
         
     Returns:
         dict: Score and feedback for structure evaluation
@@ -99,18 +100,30 @@ def evaluate(paper):
         used_aliases=used_aliases,
     )
 
-    # The score is NOT penalized for using aliases, only the feedback is adjusted.
-    return PillarResult(
+    result = PillarResult(
         pillar_name="Structure & Completeness",
         score=overall_score,
         feedback=feedback,
-        gpt_analysis_data={
-            "missing": missing_sections,
-            "short": short_sections,
-            "out_of_order": out_of_order,
-            "used_aliases": used_aliases,
-        }
     ).__dict__
+
+    # 🔹 Si se usa la opción --use-chatGPT, activar el análisis avanzado con Perplexity
+    if use_gpt:
+        try:
+            from integrations.perplexity_api import analyze_structure
+            # El análisis se basa en la lista de secciones del paper
+            result['gpt_analysis'] = analyze_structure(paper.sections)
+        except ImportError:
+            result['gpt_analysis'] = {
+                "success": False,
+                "error": "Perplexity integration not found."
+            }
+        except Exception as e:
+            result['gpt_analysis'] = {
+                "success": False,
+                "error": f"Perplexity analysis failed: {e}"
+            }
+            
+    return result
 
 
 def _check_section_structure(text: str, sections: list) -> tuple:

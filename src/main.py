@@ -134,11 +134,11 @@ def process_single_paper(input_path, args):
     
     # Structure evaluation
     logger.info("Evaluating structure...")
-    results["structure"] = check_structure.evaluate(paper)
+    results["structure"] = check_structure.evaluate(paper, use_gpt=args.use_chatgpt)
     
     # Linguistics evaluation
     logger.info("Evaluating linguistics...")
-    results["linguistics"] = check_linguistics.evaluate(paper)
+    results["linguistics"] = check_linguistics.evaluate(paper, use_gpt=args.use_chatgpt)
     
     # Cohesion evaluation (with optional GPT)
     logger.info("Evaluating cohesion...")
@@ -159,7 +159,7 @@ def process_single_paper(input_path, args):
     
     # Reproducibility evaluation
     logger.info("Evaluating reproducibility...")
-    results["reproducibility"] = check_reproducibility.evaluate(paper)
+    results["reproducibility"] = check_reproducibility.evaluate(paper, use_gpt=args.use_chatgpt)
     
     # References evaluation
     logger.info("Evaluating references...")
@@ -357,12 +357,19 @@ def print_linguistic_errors(ling_result, max_errors=30):
         print(f"  💡 Use --max-errors {total_errors} to see all errors")
 
 def print_gpt_analysis_section(title: str, gpt_info: dict):
-    """Helper to print a generic GPT analysis section."""
+    """
+    Helper to print a generic GPT analysis section.
+    Handles both OpenAI and Perplexity outputs.
+    """
     if not gpt_info:
         return
         
+    # Determinar el motor de análisis (OpenAI o Perplexity)
+    is_openai = "cost_info" in gpt_info
+    engine_name = "GPT-4o-mini" if is_openai else "Perplexity Sonar Pro"
+    
     print("\n" + "-"*70)
-    print(f"🤖 GPT-4o-mini Deep Analysis: {title}")
+    print(f"🤖 {engine_name} Deep Analysis: {title}")
     print("-"*70)
 
     if not gpt_info.get("success"):
@@ -370,19 +377,36 @@ def print_gpt_analysis_section(title: str, gpt_info: dict):
         print(f"  Analysis Failed: {error}")
         return
     
-    cost_info = gpt_info.get("cost_info", {})
-    print(f"  Cost: ${cost_info.get('cost_usd', 0):.4f}")
-    print(f"  Tokens: {cost_info.get('total_tokens', 0)} (input: {cost_info.get('input_tokens', 0)}, output: {cost_info.get('output_tokens', 0)})")
+    # --- Detalles específicos de OpenAI ---
+    if is_openai:
+        cost_info = gpt_info.get("cost_info", {})
+        print(f"  Cost: ${cost_info.get('cost_usd', 0):.4f}")
+        print(f"  Tokens: {cost_info.get('total_tokens', 0)} (input: {cost_info.get('input_tokens', 0)}, output: {cost_info.get('output_tokens', 0)})")
     
+    # --- Contenido del análisis (común a ambos) ---
     analysis = gpt_info.get("analysis", {})
-    if analysis:
-        print(f"  Overall GPT Score: {analysis.get('overall_score', 0):.2f} - Verdict: {analysis.get('final_verdict', 'N/A')}")
+    
+    # Si el análisis es un string (de Perplexity), simplemente lo imprimimos
+    if isinstance(analysis, str):
+        print(analysis)
+        return
+
+    # Si es un diccionario (de OpenAI), lo formateamos
+    if isinstance(analysis, dict):
+        if 'overall_score' in analysis:
+             print(f"  Overall GPT Score: {analysis.get('overall_score', 0):.2f} - Verdict: {analysis.get('final_verdict', 'N/A')}")
         
         if 'sub_modules' in analysis:
             print(f"\n  {title} Sub-modules:")
             for name, sub in analysis['sub_modules'].items():
                 if sub:
                     print(f"    - {name.replace('_', ' ').title():.<25} {sub.get('score', 0):.2f} - {sub.get('feedback', 'N/A')}")
+
+        strengths = analysis.get('strengths', [])
+        if strengths:
+            print("\n  Strengths:")
+            for strength in strengths:
+                print(f"    - {strength}")
 
         issues = analysis.get('issues', [])
         if issues:
@@ -395,12 +419,6 @@ def print_gpt_analysis_section(title: str, gpt_info: dict):
             print("\n  Recommendations:")
             for suggestion in suggestions:
                 print(f"    - {suggestion}")
-        
-        strengths = analysis.get('strengths', [])
-        if strengths:
-            print("\n  Strengths:")
-            for strength in strengths:
-                print(f"    - {strength}")
 
 def print_results(paper, overall_score, results, weights, args):
     """Print formatted results"""
@@ -464,13 +482,21 @@ def print_results(paper, overall_score, results, weights, args):
     
     # Show GPT specific info if used
     if args.use_chatgpt:
-        # Cohesion GPT analysis
-        if "cohesion" in results and results["cohesion"].get("gpt_analysis", {}).get("success"):
-            print_gpt_analysis_section("Cohesion", results["cohesion"]["gpt_analysis"])
-        
-        # Quality GPT analysis
-        if "quality" in results and results["quality"].get("gpt_analysis"):
-            print_gpt_analysis_section("Scientific Quality", results["quality"]["gpt_analysis"])
+        # Definir el orden de los pilares para la sección de análisis profundo
+        llm_pillars = [
+            ("Structure & Completeness", "structure"),
+            ("Linguistic Quality", "linguistics"),
+            ("Cohesion", "cohesion"),
+            ("Reproducibility", "reproducibility"),
+            ("References & Citations", "references"),
+            ("Scientific Quality", "quality")
+        ]
+
+        for pillar_name, pillar_key in llm_pillars:
+            if pillar_key in results and results[pillar_key].get("gpt_analysis"):
+                # Solo imprimir si el análisis fue exitoso
+                if results[pillar_key].get("gpt_analysis", {}).get("success"):
+                    print_gpt_analysis_section(pillar_name, results[pillar_key]["gpt_analysis"])
     
     # GPT cost report
     if args.gpt_report and "cohesion" in results:

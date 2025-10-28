@@ -635,15 +635,35 @@ class LinguisticAnalyzer:
         }
 
 
-def evaluate(paper) -> dict:
+def evaluate(paper, use_gpt=False) -> dict:
     """
     Main evaluation function for compatibility with existing system.
     
     Args:
         paper: Paper object with text content
+        use_gpt (bool): Flag to enable Perplexity analysis.
         
     Returns:
         dict: Score and detailed feedback for linguistic quality
     """
     analyzer = LinguisticAnalyzer()
-    return analyzer.analyze(paper)
+    result = analyzer.analyze(paper)
+
+    # 🔹 Si se usa la opción --use-chatGPT, activar el análisis avanzado con Perplexity
+    if use_gpt:
+        try:
+            from integrations.perplexity_api import analyze_linguistics
+            # El análisis se basa en el texto completo del paper
+            result['gpt_analysis'] = analyze_linguistics(paper.full_text)
+        except ImportError:
+            result['gpt_analysis'] = {
+                "success": False,
+                "error": "Perplexity integration not found."
+            }
+        except Exception as e:
+            result['gpt_analysis'] = {
+                "success": False,
+                "error": f"Perplexity analysis failed: {e}"
+            }
+            
+    return result

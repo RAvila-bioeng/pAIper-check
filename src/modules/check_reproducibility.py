@@ -8,8 +8,14 @@ from typing import List, Tuple
 from models.score import PillarResult
 
 
-def evaluate(paper) -> dict:
-    """Evaluate reproducibility aspects of the paper."""
+def evaluate(paper, use_gpt=False) -> dict:
+    """
+    Evaluate reproducibility aspects of the paper.
+    
+    Args:
+        paper: Paper object with text and sections.
+        use_gpt (bool): Flag to enable Perplexity analysis.
+    """
     text = paper.full_text.lower()
     
     clarity_score = _check_methodological_clarity(text, paper.sections)
@@ -22,7 +28,26 @@ def evaluate(paper) -> dict:
     
     feedback = _generate_feedback(clarity_score, data_score, materials_score, parameter_score, text)
     
-    return PillarResult("Reproducibility", overall_score, feedback).__dict__
+    result = PillarResult("Reproducibility", overall_score, feedback).__dict__
+
+    # 🔹 Si se usa la opción --use-chatGPT, activar el análisis avanzado con Perplexity
+    if use_gpt:
+        try:
+            from integrations.perplexity_api import analyze_reproducibility
+            # El análisis se basa en el texto completo del paper
+            result['gpt_analysis'] = analyze_reproducibility(paper.full_text)
+        except ImportError:
+            result['gpt_analysis'] = {
+                "success": False,
+                "error": "Perplexity integration not found."
+            }
+        except Exception as e:
+            result['gpt_analysis'] = {
+                "success": False,
+                "error": f"Perplexity analysis failed: {e}"
+            }
+            
+    return result
 
 
 def _check_methodological_clarity(text: str, sections: List) -> float:

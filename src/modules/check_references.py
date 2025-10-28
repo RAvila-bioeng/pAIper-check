@@ -95,17 +95,26 @@ def evaluate(paper, use_gpt=False) -> dict:
         format_score, quality_score, accessibility_score, density_score, 
         recency_score, diversity_score, credibility_score, semantic_score
     )
+    result = PillarResult("References & Citations", overall_score, feedback).__dict__
+
     # 🔹 Si se usa la opción --use-chatGPT, activar el análisis avanzado con Perplexity
     if use_gpt:
         try:
             from integrations.perplexity_api import analyze_references
-            gpt_feedback = analyze_references(references)
-            feedback += f"\n\n🔍 Perplexity Sonar Pro Analysis:\n{gpt_feedback}"
+            # Devuelve un diccionario con 'success' y 'analysis' o 'error'
+            result['gpt_analysis'] = analyze_references(references)
         except ImportError:
-            feedback += f"\n\n⚠️ Perplexity integration not found. Please ensure 'integrations/perplexity_api.py' exists."
+            result['gpt_analysis'] = {
+                "success": False,
+                "error": "Perplexity integration not found."
+            }
         except Exception as e:
-            feedback += f"\n\n⚠️ Perplexity analysis failed: {e}"
-    return PillarResult("References & Citations", overall_score, feedback).__dict__
+            result['gpt_analysis'] = {
+                "success": False,
+                "error": f"Perplexity analysis failed: {e}"
+            }
+            
+    return result
 
 
 # ----------------------------- FORMAT CHECK -----------------------------
