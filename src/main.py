@@ -29,25 +29,25 @@ Examples:
   # Basic evaluation (FREE)
   python main.py --input paper.pdf
   
-  # With GPT-4o-mini deep analysis (recommended)
-  python main.py --input paper.pdf --use-chatgpt
+  # With LLM deep analysis (recommended)
+  python main.py --input paper.pdf --use-llm
   
   # Show detailed linguistic errors
   python main.py --input paper.pdf --show-errors
   
   # Save detailed results to JSON
-  python main.py --input paper.pdf --use-chatgpt --output results.json
+  python main.py --input paper.pdf --use-llm --output results.json
   
   # Batch analysis
-  python main.py --input papers/*.pdf --use-chatgpt --batch
+  python main.py --input papers/*.pdf --use-llm --batch
         """
     )
     
     parser.add_argument("--input", required=True, help="Path to input paper (PDF or TXT)")
     parser.add_argument("--output", help="Path to save evaluation report (JSON)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parser.add_argument("--use-chatgpt", action="store_true", 
-                       help="Enable GPT-4o-mini deep analysis for coherence (cost: ~$0.002/paper)")
+    parser.add_argument("--use-llm", action="store_true", 
+                       help="Enable deep analysis with GPT-4o-mini and Perplexity Sonar")
     parser.add_argument("--force-gpt", action="store_true",
                        help="Force GPT analysis even if basic score is good")
     parser.add_argument("--gpt-report", action="store_true",
@@ -66,7 +66,7 @@ Examples:
     args = parser.parse_args()
 
     # Check if GPT is enabled and API key is available
-    if args.use_chatgpt:
+    if args.use_llm:
         import os
         from dotenv import load_dotenv
         load_dotenv()
@@ -76,7 +76,7 @@ Examples:
             logger.warning("GPT analysis requested but OPENAI_API_KEY not found in .env")
             logger.warning("Add to .env file: OPENAI_API_KEY=sk-your-key-here")
             logger.warning("Continuing with basic analysis only...")
-            args.use_chatgpt = False
+            args.use_llm = False
         else:
             logger.info("✓ GPT-4o-mini enabled for deep coherence analysis")
 
@@ -134,15 +134,15 @@ def process_single_paper(input_path, args):
     
     # Structure evaluation
     logger.info("Evaluating structure...")
-    results["structure"] = check_structure.evaluate(paper, use_gpt=args.use_chatgpt)
+    results["structure"] = check_structure.evaluate(paper, use_gpt=args.use_llm)
     
     # Linguistics evaluation
     logger.info("Evaluating linguistics...")
-    results["linguistics"] = check_linguistics.evaluate(paper, use_gpt=args.use_chatgpt)
+    results["linguistics"] = check_linguistics.evaluate(paper, use_gpt=args.use_llm)
     
     # Cohesion evaluation (with optional GPT)
     logger.info("Evaluating cohesion...")
-    if args.use_chatgpt:
+    if args.use_llm:
         logger.info("  → GPT-4o-mini deep analysis enabled")
         results["cohesion"] = check_cohesion.evaluate(paper, use_gpt=True)
         
@@ -159,15 +159,15 @@ def process_single_paper(input_path, args):
     
     # Reproducibility evaluation
     logger.info("Evaluating reproducibility...")
-    results["reproducibility"] = check_reproducibility.evaluate(paper, use_gpt=args.use_chatgpt)
+    results["reproducibility"] = check_reproducibility.evaluate(paper, use_gpt=args.use_llm)
     
     # References evaluation
     logger.info("Evaluating references...")
-    results["references"] = check_references.evaluate(paper, use_gpt=args.use_chatgpt)
+    results["references"] = check_references.evaluate(paper, use_gpt=args.use_llm)
     
     # Quality evaluation (with optional GPT)
     logger.info("Evaluating scientific quality...")
-    if args.use_chatgpt:
+    if args.use_llm:
         logger.info("  → GPT-4o-mini deep analysis enabled")
         results["quality"] = check_quality.evaluate(paper, use_gpt=True)
         
@@ -199,11 +199,11 @@ def process_single_paper(input_path, args):
         "overall_score": overall_score,
         "pillar_scores": results,
         "weights": weights,
-        "gpt_enabled": args.use_chatgpt
+        "gpt_enabled": args.use_llm
     }
     
     # Add GPT cost report if available
-    if args.use_chatgpt and "cohesion" in results:
+    if args.use_llm and "cohesion" in results:
         cost_report = results["cohesion"].get("cost_report")
         if cost_report:
             final_results["gpt_cost_report"] = cost_report
@@ -460,7 +460,7 @@ def print_results(paper, overall_score, results, weights, args):
         
         print(f"  {indicator} {pillar_name:.<40} {score:.2f} (weight: {weight:.2f})")
         
-        # --- NEW: Print score breakdown if available ---
+        # Print score breakdown if available
         if 'score_breakdown' in result:
             for sub_name, sub_score in result['score_breakdown'].items():
                 print(f"    - {sub_name:.<37} {sub_score:.2f}")
@@ -476,27 +476,42 @@ def print_results(paper, overall_score, results, weights, args):
         print(f"\n{pillar_name}:")
         print(f"  {feedback}")
         
-        # NEW: Show linguistic errors if requested or if score is very low
+        # Show linguistic errors if requested or if score is very low
         if pillar == "linguistics" and (args.show_errors or result.get("score", 1.0) < 0.3):
             print_linguistic_errors(result, args.max_errors)
     
-    # Show GPT specific info if used
-    if args.use_chatgpt:
-        # Definir el orden de los pilares para la sección de análisis profundo
+    # Show GPT/LLM analysis if used
+    if args.use_llm:
+        # Definición correcta de pilares con sus claves exactas
+        # IMPORTANTE: Las claves deben coincidir con las del diccionario results
         llm_pillars = [
             ("Structure & Completeness", "structure"),
             ("Linguistic Quality", "linguistics"),
-            ("Cohesion", "cohesion"),
+            ("Cohesion & Flow", "cohesion"),  # CORREGIDO: era "Cohesion" duplicado
             ("Reproducibility", "reproducibility"),
             ("References & Citations", "references"),
-            ("Scientific Quality", "quality")
+            ("Scientific Quality", "quality")  # AÑADIDO: faltaba quality
         ]
 
         for pillar_name, pillar_key in llm_pillars:
-            if pillar_key in results and results[pillar_key].get("gpt_analysis"):
-                # Solo imprimir si el análisis fue exitoso
-                if results[pillar_key].get("gpt_analysis", {}).get("success"):
-                    print_gpt_analysis_section(pillar_name, results[pillar_key]["gpt_analysis"])
+            # Verificar que el pilar existe en los resultados
+            if pillar_key not in results:
+                continue
+            
+            # Obtener información del análisis GPT/LLM
+            result = results[pillar_key]
+            gpt_info = result.get("gpt_analysis")
+            
+            # Verificar que existe análisis y fue exitoso
+            if gpt_info and gpt_info.get("success"):
+                print_gpt_analysis_section(pillar_name, gpt_info)
+            
+            # OPCIONAL: Debug para ver qué pilares tienen análisis LLM
+            # if args.verbose and gpt_info:
+            #     if not gpt_info.get("success"):
+            #         print(f"\n  [DEBUG] {pillar_name}: Analysis failed - {gpt_info.get('error', 'Unknown')}")
+            #     elif not gpt_info.get("used", True):
+            #         print(f"\n  [DEBUG] {pillar_name}: Analysis skipped - {gpt_info.get('reason', 'Unknown')}")
     
     # GPT cost report
     if args.gpt_report and "cohesion" in results:
@@ -523,7 +538,8 @@ def print_results(paper, overall_score, results, weights, args):
     
     print("="*70 + "\n")
 
-
+    
+     
 def print_batch_summary(results, successful, failed, total_cost, args):
     """Print batch processing summary"""
     
@@ -554,7 +570,7 @@ def print_batch_summary(results, successful, failed, total_cost, args):
         print(f"  🟠 Fair (0.5-0.7): {fair} papers")
         print(f"  🔴 Poor (<0.5): {poor} papers")
     
-    if args.use_chatgpt and total_cost > 0:
+    if args.use_llm and total_cost > 0:
         print(f"\n💰 GPT Analysis Costs:")
         print(f"  Total cost: ${total_cost:.4f}")
         print(f"  Average cost/paper: ${total_cost/max(1, successful):.4f}")

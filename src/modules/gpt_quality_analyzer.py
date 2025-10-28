@@ -42,8 +42,11 @@ if GPT_AVAILABLE:
             
             return False
         
-        def analyze_quality(self, paper, gpt_analysis_data: Dict, basic_score: float) -> Dict:
+        def analyze_quality(self, paper, basic_result: Dict) -> Dict:
             """Perform deep scientific quality analysis using GPT-4o-mini."""
+            
+            # ✅ CORRECCIÓN: Extraer basic_score de basic_result
+            basic_score = basic_result.get('score', 0.0)
             
             modules = {
                 "novelty_assessment": self._analyze_novelty,
@@ -59,7 +62,8 @@ if GPT_AVAILABLE:
             
             all_successful = True
             for name, module_func in modules.items():
-                result = module_func(paper, gpt_analysis_data)
+                # ✅ CORRECCIÓN: Pasar basic_result en lugar de gpt_analysis_data
+                result = module_func(paper, basic_result)
                 sub_results[name] = result
                 if result.get('success'):
                     total_cost += result.get('cost_info', {}).get('cost_usd', 0)
@@ -81,30 +85,10 @@ if GPT_AVAILABLE:
                 "final_verdict": self._get_final_verdict(final_score)
             }
 
-            # If any module failed, the overall analysis is not successful
-            if not all_successful:
-                # Find the first error to report
-                first_error = "Unknown error"
-                for res in sub_results.values():
-                    if not res.get("success"):
-                        first_error = res.get("error", "Unknown error")
-                        break
-                return {
-                    'success': False,
-                    'error': first_error,
-                    'analysis': final_analysis,
-                    'cost_info': {
-                        'cost_usd': round(total_cost, 4),
-                        'input_tokens': total_tokens['input'],
-                        'output_tokens': total_tokens['output'],
-                        'total_tokens': total_tokens['input'] + total_tokens['output']
-                    },
-                    'model': 'gpt-4o-mini'
-                }
-
-            
+            # If any module failed, mark as partial success but don't fail completely
             return {
-                'success': True,
+                'success': all_successful,
+                'error': None if all_successful else "Some sub-modules failed",
                 'analysis': final_analysis,
                 'cost_info': {
                     'cost_usd': round(total_cost, 4),
@@ -115,7 +99,7 @@ if GPT_AVAILABLE:
                 'model': 'gpt-4o-mini'
             }
         
-        def _analyze_novelty(self, paper, gpt_analysis_data: Dict) -> Dict:
+        def _analyze_novelty(self, paper, basic_result: Dict) -> Dict:
             """Analyze novelty and originality using GPT."""
             system_prompt = "You are an expert scientific reviewer analyzing novelty and originality. Respond in JSON."
             
@@ -128,16 +112,17 @@ if GPT_AVAILABLE:
                 "2. Identify specific novel contributions.\n"
                 "3. Assess how the work advances the field.\n"
                 "4. Note any gaps in novelty claims.\n"
+                "5. Provide concise feedback (1-2 sentences).\n"
                 'RESPOND IN JSON FORMAT:\n'
-                '{"score": <float>, "novel_contributions": ["<contribution1>", "<contribution2>"], "field_advancement": "<string>", "gaps": ["<gap1>", "<gap2>"]}'
+                '{"score": <float>, "feedback": "<string>", "novel_contributions": ["<contribution1>"], "field_advancement": "<string>", "gaps": ["<gap1>"]}'
             )
             return self._call_gpt(prompt, system_prompt)
         
-        def _analyze_rigor(self, paper, gpt_analysis_data: Dict) -> Dict:
+        def _analyze_rigor(self, paper, basic_result: Dict) -> Dict:
             """Analyze methodological rigor using GPT."""
             system_prompt = "You are an expert scientific reviewer analyzing methodological rigor. Respond in JSON."
             
-            methodology_content = paper.get_section_content('methodology') or "Methodology section not found"
+            methodology_content = paper.get_section_content('methodology') or paper.get_section_content('methods') or "Methodology section not found"
             
             prompt = (
                 f"Analyze the methodological rigor of this research.\n"
@@ -148,12 +133,13 @@ if GPT_AVAILABLE:
                 "2. Assess experimental design quality.\n"
                 "3. Evaluate statistical analysis appropriateness.\n"
                 "4. Identify methodological limitations.\n"
+                "5. Provide concise feedback (1-2 sentences).\n"
                 'RESPOND IN JSON FORMAT:\n'
-                '{"score": <float>, "design_quality": "<string>", "statistical_appropriateness": "<string>", "limitations": ["<limitation1>", "<limitation2>"]}'
+                '{"score": <float>, "feedback": "<string>", "design_quality": "<string>", "statistical_appropriateness": "<string>", "limitations": ["<limitation1>"]}'
             )
             return self._call_gpt(prompt, system_prompt)
         
-        def _analyze_significance(self, paper, gpt_analysis_data: Dict) -> Dict:
+        def _analyze_significance(self, paper, basic_result: Dict) -> Dict:
             """Analyze results significance using GPT."""
             system_prompt = "You are an expert scientific reviewer analyzing results significance. Respond in JSON."
             
@@ -168,12 +154,13 @@ if GPT_AVAILABLE:
                 "2. Assess quantitative evidence strength.\n"
                 "3. Evaluate comparison with baselines.\n"
                 "4. Identify significance limitations.\n"
+                "5. Provide concise feedback (1-2 sentences).\n"
                 'RESPOND IN JSON FORMAT:\n'
-                '{"score": <float>, "evidence_strength": "<string>", "baseline_comparisons": "<string>", "limitations": ["<limitation1>", "<limitation2>"]}'
+                '{"score": <float>, "feedback": "<string>", "evidence_strength": "<string>", "baseline_comparisons": "<string>", "limitations": ["<limitation1>"]}'
             )
             return self._call_gpt(prompt, system_prompt)
         
-        def _analyze_theory(self, paper, gpt_analysis_data: Dict) -> Dict:
+        def _analyze_theory(self, paper, basic_result: Dict) -> Dict:
             """Analyze theoretical contribution using GPT."""
             system_prompt = "You are an expert scientific reviewer analyzing theoretical contributions. Respond in JSON."
             
@@ -186,12 +173,13 @@ if GPT_AVAILABLE:
                 "2. Identify theoretical frameworks used.\n"
                 "3. Assess theoretical implications.\n"
                 "4. Note theoretical limitations.\n"
+                "5. Provide concise feedback (1-2 sentences).\n"
                 'RESPOND IN JSON FORMAT:\n'
-                '{"score": <float>, "frameworks": ["<framework1>", "<framework2>"], "implications": "<string>", "limitations": ["<limitation1>", "<limitation2>"]}'
+                '{"score": <float>, "feedback": "<string>", "frameworks": ["<framework1>"], "implications": "<string>", "limitations": ["<limitation1>"]}'
             )
             return self._call_gpt(prompt, system_prompt)
         
-        def _analyze_practical(self, paper, gpt_analysis_data: Dict) -> Dict:
+        def _analyze_practical(self, paper, basic_result: Dict) -> Dict:
             """Analyze practical implications using GPT."""
             system_prompt = "You are an expert scientific reviewer analyzing practical implications. Respond in JSON."
             
@@ -204,12 +192,13 @@ if GPT_AVAILABLE:
                 "2. Identify potential applications.\n"
                 "3. Assess broader impact.\n"
                 "4. Note practical limitations.\n"
+                "5. Provide concise feedback (1-2 sentences).\n"
                 'RESPOND IN JSON FORMAT:\n'
-                '{"score": <float>, "applications": ["<app1>", "<app2>"], "broader_impact": "<string>", "limitations": ["<limitation1>", "<limitation2>"]}'
+                '{"score": <float>, "feedback": "<string>", "applications": ["<app1>"], "broader_impact": "<string>", "limitations": ["<limitation1>"]}'
             )
             return self._call_gpt(prompt, system_prompt)
         
-        def _call_gpt(self, prompt: str, system_prompt: str, max_tokens=400) -> Dict:
+        def _call_gpt(self, prompt: str, system_prompt: str, max_tokens=500) -> Dict:
             """Make a structured call to the OpenAI API."""
             try:
                 response = self.client.chat.completions.create(
@@ -239,7 +228,7 @@ if GPT_AVAILABLE:
                 }
             except Exception as e:
                 # Check for authentication errors
-                if "401" in str(e):
+                if "401" in str(e) or "Incorrect API key" in str(e):
                     error_message = "AuthenticationError: Invalid OpenAI API key."
                 else:
                     error_message = str(e)
@@ -263,8 +252,13 @@ if GPT_AVAILABLE:
             """Aggregate results from all sub-modules."""
             issues, suggestions, strengths = [], [], []
             
-            weights = {"novelty_assessment": 0.25, "rigor_evaluation": 0.20, "significance_analysis": 0.20, 
-                      "theoretical_contribution": 0.15, "practical_impact": 0.20}
+            weights = {
+                "novelty_assessment": 0.25, 
+                "rigor_evaluation": 0.20, 
+                "significance_analysis": 0.20, 
+                "theoretical_contribution": 0.15, 
+                "practical_impact": 0.20
+            }
             
             total_score, total_weight = 0, 0
             
@@ -272,14 +266,27 @@ if GPT_AVAILABLE:
                 if result.get('success'):
                     analysis = result.get('analysis', {})
                     score = analysis.get('score', 0.0)
+                    feedback = analysis.get('feedback', '')
                     
                     total_score += score * weights.get(name, 0)
                     total_weight += weights.get(name, 0)
                     
+                    # Collect issues and strengths based on score
                     if score < 0.6:
-                        issues.append(f"Weak {name.replace('_', ' ')}: {analysis.get('feedback', 'No feedback')}")
+                        issue_text = f"Weak {name.replace('_', ' ')}"
+                        if feedback:
+                            issue_text += f": {feedback}"
+                        issues.append(issue_text)
                     elif score >= 0.8:
-                        strengths.append(f"Strong {name.replace('_', ' ')}: {analysis.get('feedback', 'No feedback')}")
+                        strength_text = f"Strong {name.replace('_', ' ')}"
+                        if feedback:
+                            strength_text += f": {feedback}"
+                        strengths.append(strength_text)
+                    
+                    # Add general suggestions
+                    if 'limitations' in analysis and analysis['limitations']:
+                        for limitation in analysis['limitations'][:2]:  # Max 2 per module
+                            suggestions.append(f"Address {limitation}")
             
             final_score = (total_score / total_weight) if total_weight > 0 else basic_score
             
@@ -289,7 +296,7 @@ if GPT_AVAILABLE:
             if score >= 0.85: return "EXCELLENT"
             if score >= 0.7: return "GOOD"
             if score >= 0.5: return "FAIR"
-            return "POOR"
+            return "NEEDS IMPROVEMENT"
 
     def enhance_quality_with_gpt(paper, basic_result: Dict, force_analysis: bool = False) -> Dict:
         """Main integration function: Enhance basic quality analysis with GPT-4o-mini."""
@@ -298,7 +305,6 @@ if GPT_AVAILABLE:
         
         basic_score = basic_result.get('score', 0.0)
         basic_feedback = basic_result.get('feedback', '')
-        gpt_analysis_data = basic_result.get('gpt_analysis_data', {})
         
         # Decide if GPT analysis is needed
         needs_gpt = force_analysis or analyzer.should_use_gpt_analysis(basic_score, basic_feedback)
@@ -306,14 +312,14 @@ if GPT_AVAILABLE:
         if not needs_gpt:
             basic_result['gpt_analysis'] = {
                 'used': False,
-                'success': True, # It didn't fail, it was just skipped
+                'success': True,  # It didn't fail, it was just skipped
                 'reason': 'Basic analysis sufficient (score >= 0.7)',
                 'cost_saved': 0.003
             }
             return basic_result
         
-        # Perform GPT analysis
-        gpt_result = analyzer.analyze_quality(paper, gpt_analysis_data, basic_score)
+        # ✅ CORRECCIÓN: Pasar basic_result en lugar de gpt_analysis_data
+        gpt_result = analyzer.analyze_quality(paper, basic_result)
         
         # Enhance feedback
         if gpt_result.get('success'):
@@ -327,24 +333,27 @@ if GPT_AVAILABLE:
                 basic_result['score'] = (basic_score * 0.4) + (gpt_score * 0.6)
                 if 'score_breakdown' not in basic_result:
                     basic_result['score_breakdown'] = {}
-                basic_result['score_breakdown']['gpt_enhanced'] = True
+                basic_result['score_breakdown']['gpt_enhanced'] = gpt_score
         
-        # Add GPT analysis to result, ensuring 'success' and 'error' are present
-        final_gpt_result = {
+        # ✅ CORRECCIÓN: Añadir análisis GPT correctamente
+        basic_result['gpt_analysis'] = {
             'used': True,
             'success': gpt_result.get('success', False),
             'analysis': gpt_result.get('analysis', {}),
             'cost_info': gpt_result.get('cost_info', {}),
-            'error': gpt_result.get('error')
+            'model': gpt_result.get('model', 'gpt-4o-mini')
         }
-        basic_result['gpt_analysis'] = final_gpt_result
+        
+        # Add error if present
+        if not gpt_result.get('success'):
+            basic_result['gpt_analysis']['error'] = gpt_result.get('error', 'Unknown error')
         
         return basic_result
 
     def format_gpt_feedback(gpt_result: Dict, basic_feedback: str) -> str:
         """Format GPT analysis into readable feedback."""
         if not gpt_result.get('success'):
-            return basic_feedback + f" [GPT Analysis Failed: {gpt_result.get('error', 'Unknown error')}]"
+            return basic_feedback + f"\n\n[GPT Analysis Failed: {gpt_result.get('error', 'Unknown error')}]"
         
         analysis = gpt_result.get('analysis', {})
         feedback_parts = [basic_feedback]
@@ -352,13 +361,15 @@ if GPT_AVAILABLE:
         # Add GPT score comparison
         gpt_score = analysis.get('overall_score', 0)
         feedback_parts.append(f"\n\n--- DEEP AI ANALYSIS (GPT-4o-mini) ---")
-        feedback_parts.append(f"Enhanced Quality Score: {gpt_score:.2f}/1.0")
+        feedback_parts.append(f"Enhanced Quality Score: {gpt_score:.2f}/1.0 ({analysis.get('final_verdict', 'N/A')})")
         
         # Add sub-module scores
         if 'sub_modules' in analysis:
             feedback_parts.append("\nQuality Sub-modules:")
             for name, sub in analysis['sub_modules'].items():
-                feedback_parts.append(f"  - {name.replace('_', ' ').title()}: {sub.get('score', 0):.2f}")
+                score = sub.get('score', 0)
+                feedback = sub.get('feedback', '')
+                feedback_parts.append(f"  - {name.replace('_', ' ').title()}: {score:.2f} - {feedback}")
         
         # Add critical issues
         issues = analysis.get('issues', [])
@@ -370,11 +381,16 @@ if GPT_AVAILABLE:
         # Add strengths
         strengths = analysis.get('strengths', [])
         if strengths:
-            feedback_parts.append(f"\n✓ STRENGTHS: {', '.join(strengths[:3])}")
+            feedback_parts.append(f"\n✅ STRENGTHS ({len(strengths)}):")
+            for strength in strengths[:3]:
+                feedback_parts.append(f"  • {strength}")
         
-        # Add verdict
-        verdict = analysis.get('final_verdict', 'N/A')
-        feedback_parts.append(f"\nFinal Verdict: {verdict}")
+        # Add suggestions
+        suggestions = analysis.get('suggestions', [])
+        if suggestions:
+            feedback_parts.append(f"\n💡 SUGGESTIONS ({len(suggestions)}):")
+            for suggestion in suggestions[:3]:
+                feedback_parts.append(f"  • {suggestion}")
         
         # Add cost info
         cost_info = gpt_result.get('cost_info', {})

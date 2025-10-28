@@ -10,12 +10,16 @@ It focuses on:
 """
 
 import re
+import logging
 from datetime import datetime
 from typing import List, Dict, Tuple
 from collections import Counter
 
 from models.paper import Paper, Reference
 from models.score import PillarResult
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 # -------------------- METRIC IMPLEMENTATIONS --------------------
 
@@ -108,6 +112,7 @@ def _check_format_consistency(references: List[Reference]) -> Tuple[float, str]:
         feedback = "❌ The reference format is highly inconsistent. A standard citation style should be applied uniformly."
     return score, feedback
 
+
 def _check_source_diversity(references: List[Reference]) -> Tuple[float, str]:
     """Scores the diversity of reference sources."""
     source_types = []
@@ -142,6 +147,7 @@ def _check_source_diversity(references: List[Reference]) -> Tuple[float, str]:
         
     return score, feedback
 
+
 # -------------------- MAIN EVALUATION LOGIC --------------------
 
 def evaluate(paper: Paper, use_gpt: bool = False) -> dict:
@@ -149,15 +155,21 @@ def evaluate(paper: Paper, use_gpt: bool = False) -> dict:
     Evaluates the quality of the paper's references.
 
     This function provides a baseline analysis of the references, which can be
-    later enhanced by an LLM analysis.
+    later enhanced by an LLM analysis (Perplexity Sonar).
     """
     references = paper.references
 
     if not references:
         feedback = "The paper does not contain a references section or it could not be parsed."
         result = PillarResult("References & Citations", 0.1, feedback).__dict__
+        
         if use_gpt:
-            result['gpt_analysis'] = {"used": False, "success": False, "error": "Skipped due to no references."}
+            result['gpt_analysis'] = {
+                "used": False,
+                "success": False,
+                "reason": "No references found to analyze",
+                "error": "Skipped due to no references."
+            }
         return result
 
     # 1. Evaluate each metric
@@ -191,23 +203,73 @@ def evaluate(paper: Paper, use_gpt: bool = False) -> dict:
     ])
 
     result = PillarResult("References & Citations", overall_score, feedback).__dict__
+    
+    # Add score breakdown
+    result['score_breakdown'] = {
+        'quantity': quantity_score,
+        'recency': recency_score,
+        'consistency': consistency_score,
+        'diversity': diversity_score
+    }
 
-    # If the --use-chatgpt flag is used, activate the advanced analysis with Perplexity
+    # ✅ CORRECCIÓN: Análisis con Perplexity si use_gpt está activado
     if use_gpt:
+        logger.info("Attempting Perplexity analysis for references...")
         try:
-            from integrations.perplexity_api import analyze_references
-            result['gpt_analysis'] = analyze_references(references)
-        except ImportError:
+            # Intentar diferentes formas de importar
+            try:
+                from integrations.perplexity_api import analyze_references
+                logger.info("Successfully imported perplexity_api")
+            except ImportError as e:
+                logger.warning(f"First import attempt failed: {e}")
+                import sys
+                from pathlib import Path
+                # Añadir el directorio src al path si no está
+                src_path = Path(__file__).parent.parent
+                if str(src_path) not in sys.path:
+                    sys.path.insert(0, str(src_path))
+                    logger.info(f"Added {src_path} to sys.path")
+                from integrations.perplexity_api import analyze_references
+                logger.info("Successfully imported perplexity_api on second attempt")
+            
+            # Llamar a Perplexity
+            logger.info(f"Calling Perplexity API with {len(references)} references...")
+            perplexity_result = analyze_references(references)
+            logger.info(f"Perplexity returned: success={perplexity_result.get('success')}")
+            
+            # ✅ Asegurar estructura correcta con todos los campos necesarios
             result['gpt_analysis'] = {
-                "used": True,
+                'used': True,
+                'success': perplexity_result.get('success', False),
+                'analysis': perplexity_result.get('analysis', ''),
+                'model': perplexity_result.get('model', 'perplexity-sonar'),
+                'cost_info': perplexity_result.get('cost_info', {})
+            }
+            
+            # Añadir error si falló
+            if not perplexity_result.get('success'):
+                result['gpt_analysis']['error'] = perplexity_result.get('error', 'Unknown error')
+            
+            # Si tuvo éxito, mejorar el feedback básico
+            if perplexity_result.get('success'):
+                analysis_text = perplexity_result.get('analysis', '')
+                if analysis_text:
+                    result['feedback'] += f"\n\n--- PERPLEXITY SONAR ANALYSIS ---\n{analysis_text}"
+                    
+        except ImportError as e:
+            logger.error(f"Failed to import perplexity_api: {e}")
+            result['gpt_analysis'] = {
+                "used": False,
                 "success": False,
-                "error": "Perplexity integration not found."
+                "reason": "Perplexity integration not installed",
+                "error": f"The perplexity_api module could not be imported: {str(e)}"
             }
         except Exception as e:
+            logger.error(f"Perplexity analysis failed: {e}")
             result['gpt_analysis'] = {
                 "used": True,
                 "success": False,
-                "error": f"Perplexity analysis failed: {e}"
+                "error": f"Perplexity analysis failed: {str(e)}"
             }
             
     return result

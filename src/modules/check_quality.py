@@ -101,18 +101,20 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
         'reproducibility': reproducibility_details
     }
 
-    # Always perform main analysis; add GPT insight only if requested
+    # ✅ CORRECCIÓN: GPT enhancement - pasar basic_result completo
     if use_gpt and GPT_AVAILABLE:
-        gpt_analysis_data = {
-            'paper_info': {
-                'title': paper.title,
-                'abstract': paper.abstract,
-                'word_count': len(text.split())
-            },
-            'quality_metrics': basic_result['score_breakdown'],
-            'detailed_analysis': basic_result['detailed_analysis']
-        }
-        basic_result['gpt_analysis'] = enhance_quality_with_gpt(paper, gpt_analysis_data)
+        # La función enhance_quality_with_gpt modifica basic_result directamente
+        # y agrega el campo 'gpt_analysis' internamente
+        basic_result = enhance_quality_with_gpt(paper, basic_result, force_analysis=False)
+    else:
+        # Si no hay GPT disponible, añadir info de por qué no se usó
+        if use_gpt and not GPT_AVAILABLE:
+            basic_result['gpt_analysis'] = {
+                'used': False,
+                'success': False,
+                'reason': 'GPT dependencies not installed',
+                'error': 'The "openai" package is not installed. Please install it with "pip install openai".'
+            }
 
     return basic_result
 
