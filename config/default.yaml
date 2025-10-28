@@ -4,9 +4,14 @@ app:
   log_level: INFO
 
 llm:
-  model_name: gpt-4
-  temperature: 0.2
-  max_tokens: 2000
+  openai:
+    model_name: "gpt-4o-mini"
+    temperature: 0.2
+    max_tokens: 2500
+  perplexity:
+    model_name: "sonar-small-32k-online" # o "sonar-medium-32k-online"
+    temperature: 0.2
+    max_tokens: 2000
 
 database:
   uri: ""
