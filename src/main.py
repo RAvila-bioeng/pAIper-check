@@ -276,7 +276,7 @@ def process_batch(paper_files, args):
                 "total_papers": len(paper_files),
                 "successful": successful,
                 "failed": failed,
-                "gpt_enabled": args.use_chatgpt,
+                "gpt_enabled": args.use_llm,  # ✅ CORRECCIÓN: era use_chatgpt
                 "total_gpt_cost": total_cost
             },
             "papers": all_results
@@ -358,6 +358,7 @@ def print_linguistic_errors(ling_result, max_errors=30):
         print(f"\n  ... and {remaining} more errors")
         print(f"  💡 Use --max-errors {total_errors} to see all errors")
 
+
 def print_gpt_analysis_section(title: str, gpt_info: dict):
     """
     Helper to print a generic GPT analysis section.
@@ -368,11 +369,16 @@ def print_gpt_analysis_section(title: str, gpt_info: dict):
         
     # Determinar el motor de análisis (OpenAI o Perplexity)
     engine_name = gpt_info.get('model', 'Unknown LLM')
-    if 'gpt' in engine_name.lower():
+    
+    # ✅ CORRECCIÓN: Definir las variables de detección ANTES de usarlas
+    is_openai = 'gpt' in engine_name.lower()
+    is_perplexity = 'perplexity' in engine_name.lower() or 'sonar' in engine_name.lower()
+    
+    # Ajustar nombre del motor para display
+    if is_openai:
         engine_name = "GPT-4o-mini"
-    elif 'perplexity' in engine_name.lower() or 'sonar' in engine_name.lower():
+    elif is_perplexity:
         engine_name = "Perplexity Sonar Pro"
-
     
     print("\n" + "-"*70)
     print(f"🤖 {engine_name} Deep Analysis: {title}")
@@ -400,7 +406,7 @@ def print_gpt_analysis_section(title: str, gpt_info: dict):
     # Si es un diccionario (de OpenAI), lo formateamos
     if isinstance(analysis, dict):
         if 'overall_score' in analysis:
-             print(f"  Overall GPT Score: {analysis.get('overall_score', 0):.2f} - Verdict: {analysis.get('final_verdict', 'N/A')}")
+            print(f"  Overall GPT Score: {analysis.get('overall_score', 0):.2f} - Verdict: {analysis.get('final_verdict', 'N/A')}")
         
         if 'sub_modules' in analysis:
             print(f"\n  {title} Sub-modules:")
@@ -425,6 +431,7 @@ def print_gpt_analysis_section(title: str, gpt_info: dict):
             print("\n  Recommendations:")
             for suggestion in suggestions:
                 print(f"    - {suggestion}")
+
 
 def print_results(paper, overall_score, results, weights, args):
     """Print formatted results"""
@@ -511,13 +518,6 @@ def print_results(paper, overall_score, results, weights, args):
             # Verificar que el análisis fue intentado
             if gpt_info and gpt_info.get("used"):
                 print_gpt_analysis_section(pillar_name, gpt_info)
-            
-            # OPCIONAL: Debug para ver qué pilares tienen análisis LLM
-            # if args.verbose and gpt_info:
-            #     if not gpt_info.get("success"):
-            #         print(f"\n  [DEBUG] {pillar_name}: Analysis failed - {gpt_info.get('error', 'Unknown')}")
-            #     elif not gpt_info.get("used", True):
-            #         print(f"\n  [DEBUG] {pillar_name}: Analysis skipped - {gpt_info.get('reason', 'Unknown')}")
     
     # GPT cost report
     if args.gpt_report and "cohesion" in results:
