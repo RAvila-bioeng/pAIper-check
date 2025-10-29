@@ -139,7 +139,7 @@ def call_perplexity_api(system_prompt, user_prompt):
     }
     
     payload = {
-        "model": "llama-3-sonar-large-32k-online",
+        "model": "sonar-pro",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}

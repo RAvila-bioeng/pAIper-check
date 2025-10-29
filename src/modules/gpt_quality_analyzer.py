@@ -62,7 +62,6 @@ if GPT_AVAILABLE:
             
             all_successful = True
             for name, module_func in modules.items():
-                # ✅ CORRECCIÓN: Pasar basic_result en lugar de gpt_analysis_data
                 result = module_func(paper, basic_result)
                 sub_results[name] = result
                 if result.get('success'):
@@ -303,13 +302,13 @@ if GPT_AVAILABLE:
         
         analyzer = GPTQualityAnalyzer()
         
+        # ✅ CORRECCIÓN CRÍTICA: Extraer basic_score y basic_feedback de basic_result
         basic_score = basic_result.get('score', 0.0)
         basic_feedback = basic_result.get('feedback', '')
         
-        # Decide if GPT analysis is needed
-        needs_gpt = force_analysis or analyzer.should_use_gpt_analysis(basic_score, basic_feedback)
-        
-        if not needs_gpt:
+        # Cuando esta función es llamada, el análisis es siempre forzado.
+        # La lógica de si se debe llamar o no reside ahora en main.py (a través de --use-llm)
+        if not force_analysis:
             basic_result['gpt_analysis'] = {
                 'used': False,
                 'success': True,  # It didn't fail, it was just skipped
@@ -318,11 +317,12 @@ if GPT_AVAILABLE:
             }
             return basic_result
         
-        # ✅ CORRECCIÓN: Pasar basic_result en lugar de gpt_analysis_data
+        # Pasar basic_result completo al análisis
         gpt_result = analyzer.analyze_quality(paper, basic_result)
         
         # Enhance feedback
         if gpt_result.get('success'):
+            # ✅ CORRECCIÓN: Ahora basic_feedback está definido
             enhanced_feedback = format_gpt_feedback(gpt_result, basic_feedback)
             basic_result['feedback'] = enhanced_feedback
             
@@ -335,7 +335,7 @@ if GPT_AVAILABLE:
                     basic_result['score_breakdown'] = {}
                 basic_result['score_breakdown']['gpt_enhanced'] = gpt_score
         
-        # ✅ CORRECCIÓN: Añadir análisis GPT correctamente
+        # Añadir análisis GPT correctamente
         basic_result['gpt_analysis'] = {
             'used': True,
             'success': gpt_result.get('success', False),
@@ -346,7 +346,10 @@ if GPT_AVAILABLE:
         
         # Add error if present
         if not gpt_result.get('success'):
-            basic_result['gpt_analysis']['error'] = gpt_result.get('error', 'Unknown error')
+            error_msg = gpt_result.get('error', 'Unknown error')
+            basic_result['gpt_analysis']['error'] = error_msg
+            # Asegurarse de que el feedback refleje el error
+            basic_result['feedback'] += f"\n\n[GPT Analysis Failed: {error_msg}]"
         
         return basic_result
 

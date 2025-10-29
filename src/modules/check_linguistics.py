@@ -649,21 +649,11 @@ def evaluate(paper, use_gpt=False) -> dict:
     analyzer = LinguisticAnalyzer()
     result = analyzer.analyze(paper)
 
-    # 🔹 Si se usa la opción --use-chatGPT, activar el análisis avanzado con Perplexity
-    if use_gpt:
-        try:
-            from integrations.perplexity_api import analyze_linguistics
-            # El análisis se basa en el texto completo del paper
-            result['gpt_analysis'] = analyze_linguistics(paper.full_text)
-        except ImportError:
-            result['gpt_analysis'] = {
-                "success": False,
-                "error": "Perplexity integration not found."
-            }
-        except Exception as e:
-            result['gpt_analysis'] = {
-                "success": False,
-                "error": f"Perplexity analysis failed: {e}"
-            }
-            
+    # Devolver siempre una estructura consistente para gpt_analysis
+    result['gpt_analysis'] = {
+        'used': False,
+        'success': True,
+        'reason': 'LLM analysis is not configured for this module.'
+    }
+
     return result

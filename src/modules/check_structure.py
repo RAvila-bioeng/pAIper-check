@@ -106,22 +106,12 @@ def evaluate(paper, use_gpt=False):
         feedback=feedback,
     ).__dict__
 
-    # 🔹 Si se usa la opción --use-chatGPT, activar el análisis avanzado con Perplexity
-    if use_gpt:
-        try:
-            from integrations.perplexity_api import analyze_structure
-            # El análisis se basa en la lista de secciones del paper
-            result['gpt_analysis'] = analyze_structure(paper.sections)
-        except ImportError:
-            result['gpt_analysis'] = {
-                "success": False,
-                "error": "Perplexity integration not found."
-            }
-        except Exception as e:
-            result['gpt_analysis'] = {
-                "success": False,
-                "error": f"Perplexity analysis failed: {e}"
-            }
+    # Devolver siempre una estructura consistente para gpt_analysis
+    result['gpt_analysis'] = {
+        'used': False,
+        'success': True,
+        'reason': 'LLM analysis is not configured for this module.'
+    }
             
     return result
 

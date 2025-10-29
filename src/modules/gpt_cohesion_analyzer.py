@@ -475,6 +475,7 @@ def enhance_coherence_with_gpt(paper, basic_result: Dict,
         # Return basic result with note
         basic_result['gpt_analysis'] = {
             'used': False,
+            'success': True,
             'reason': 'Basic analysis sufficient (score >= 0.7)',
             'cost_saved': 0.002  # Approximate savings
         }

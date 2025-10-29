@@ -105,7 +105,7 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
     if use_gpt and GPT_AVAILABLE:
         # La función enhance_quality_with_gpt modifica basic_result directamente
         # y agrega el campo 'gpt_analysis' internamente
-        basic_result = enhance_quality_with_gpt(paper, basic_result, force_analysis=False)
+        basic_result = enhance_quality_with_gpt(paper, basic_result, force_analysis=True)
     else:
         # Si no hay GPT disponible, añadir info de por qué no se usó
         if use_gpt and not GPT_AVAILABLE:

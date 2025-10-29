@@ -101,6 +101,12 @@ def evaluate(paper, use_gpt: bool = False) -> dict:
         }
         basic_result['gpt_analysis_data'] = gpt_analysis_data
         return enhance_coherence_with_gpt(paper, basic_result, force_analysis=True)
+    else:
+        basic_result['gpt_analysis'] = {
+            'used': False,
+            'success': True,
+            'reason': 'LLM analysis was not enabled for this module.'
+        }
     
     return basic_result
 

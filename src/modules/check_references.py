@@ -236,7 +236,9 @@ def evaluate(paper: Paper, use_gpt: bool = False) -> dict:
             logger.info(f"Calling Perplexity API with {len(references)} references...")
             perplexity_result = analyze_references(references)
             logger.info(f"Perplexity returned: success={perplexity_result.get('success')}")
-            
+            if not perplexity_result.get('success'):
+                logger.error(f"Perplexity analysis error: {perplexity_result.get('error')}")
+
             # ✅ Asegurar estructura correcta con todos los campos necesarios
             result['gpt_analysis'] = {
                 'used': True,

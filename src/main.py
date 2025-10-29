@@ -116,6 +116,22 @@ Examples:
         return 1
 
 
+def log_llm_status(result: dict, pillar_name: str):
+    """Helper to log the status of an LLM analysis."""
+    gpt_info = result.get("gpt_analysis", {})
+    if not gpt_info.get("used"):
+        reason = gpt_info.get("reason", "Unknown")
+        logger.info(f"  → {pillar_name} LLM analysis skipped: {reason}")
+        return
+
+    if gpt_info.get("success"):
+        cost = gpt_info.get("cost_info", {}).get("cost_usd", 0)
+        engine = gpt_info.get("model", "LLM")
+        logger.info(f"  → {pillar_name} analysis with {engine} successful (cost: ${cost:.4f})")
+    else:
+        error = gpt_info.get("error", "Unknown error")
+        logger.warning(f"  → {pillar_name} LLM analysis failed: {error}")
+
 def process_single_paper(input_path, args):
     """Process a single paper"""
     
@@ -135,52 +151,38 @@ def process_single_paper(input_path, args):
     # Structure evaluation
     logger.info("Evaluating structure...")
     results["structure"] = check_structure.evaluate(paper, use_gpt=args.use_llm)
+    if args.use_llm:
+        log_llm_status(results["structure"], "Structure")
     
     # Linguistics evaluation
     logger.info("Evaluating linguistics...")
     results["linguistics"] = check_linguistics.evaluate(paper, use_gpt=args.use_llm)
+    if args.use_llm:
+        log_llm_status(results["linguistics"], "Linguistics")
     
     # Cohesion evaluation (with optional GPT)
     logger.info("Evaluating cohesion...")
+    results["cohesion"] = check_cohesion.evaluate(paper, use_gpt=args.use_llm)
     if args.use_llm:
-        logger.info("  → GPT-4o-mini deep analysis enabled")
-        results["cohesion"] = check_cohesion.evaluate(paper, use_gpt=True)
-        
-        # Check if GPT was actually used
-        gpt_info = results["cohesion"].get("gpt_analysis", {})
-        if gpt_info.get("success"):
-            cost = gpt_info.get("cost_info", {}).get("cost_usd", 0)
-            logger.info(f"  → GPT analysis performed (cost: ${cost:.4f})")
-        elif gpt_info.get("used") is False:
-            reason = gpt_info.get("reason", "Unknown")
-            logger.info(f"  → GPT analysis skipped: {reason}")
-    else:
-        results["cohesion"] = check_cohesion.evaluate(paper, use_gpt=False)
-    
+        log_llm_status(results["cohesion"], "Cohesion")
+
     # Reproducibility evaluation
     logger.info("Evaluating reproducibility...")
     results["reproducibility"] = check_reproducibility.evaluate(paper, use_gpt=args.use_llm)
+    if args.use_llm:
+        log_llm_status(results["reproducibility"], "Reproducibility")
     
     # References evaluation
     logger.info("Evaluating references...")
     results["references"] = check_references.evaluate(paper, use_gpt=args.use_llm)
+    if args.use_llm:
+        log_llm_status(results["references"], "References")
     
     # Quality evaluation (with optional GPT)
     logger.info("Evaluating scientific quality...")
+    results["quality"] = check_quality.evaluate(paper, use_gpt=args.use_llm)
     if args.use_llm:
-        logger.info("  → GPT-4o-mini deep analysis enabled")
-        results["quality"] = check_quality.evaluate(paper, use_gpt=True)
-        
-        # Check if GPT was actually used
-        gpt_info = results["quality"].get("gpt_analysis", {})
-        if gpt_info.get("success"):
-            cost = gpt_info.get("cost_info", {}).get("cost_usd", 0)
-            logger.info(f"  → GPT analysis performed (cost: ${cost:.4f})")
-        elif gpt_info.get("used") is False:
-            reason = gpt_info.get("reason", "Unknown")
-            logger.info(f"  → GPT analysis skipped: {reason}")
-    else:
-        results["quality"] = check_quality.evaluate(paper, use_gpt=False)
+        log_llm_status(results["quality"], "Quality")
     
     # Calculate overall score
     weights = config.get_evaluation_weights()
@@ -365,8 +367,12 @@ def print_gpt_analysis_section(title: str, gpt_info: dict):
         return
         
     # Determinar el motor de análisis (OpenAI o Perplexity)
-    is_openai = "cost_info" in gpt_info
-    engine_name = "GPT-4o-mini" if is_openai else "Perplexity Sonar Pro"
+    engine_name = gpt_info.get('model', 'Unknown LLM')
+    if 'gpt' in engine_name.lower():
+        engine_name = "GPT-4o-mini"
+    elif 'perplexity' in engine_name.lower() or 'sonar' in engine_name.lower():
+        engine_name = "Perplexity Sonar Pro"
+
     
     print("\n" + "-"*70)
     print(f"🤖 {engine_name} Deep Analysis: {title}")
@@ -487,10 +493,10 @@ def print_results(paper, overall_score, results, weights, args):
         llm_pillars = [
             ("Structure & Completeness", "structure"),
             ("Linguistic Quality", "linguistics"),
-            ("Cohesion & Flow", "cohesion"),  # CORREGIDO: era "Cohesion" duplicado
+            ("Cohesion & Flow", "cohesion"),
             ("Reproducibility", "reproducibility"),
             ("References & Citations", "references"),
-            ("Scientific Quality", "quality")  # AÑADIDO: faltaba quality
+            ("Scientific Quality", "quality")
         ]
 
         for pillar_name, pillar_key in llm_pillars:
@@ -502,8 +508,8 @@ def print_results(paper, overall_score, results, weights, args):
             result = results[pillar_key]
             gpt_info = result.get("gpt_analysis")
             
-            # Verificar que existe análisis y fue exitoso
-            if gpt_info and gpt_info.get("success"):
+            # Verificar que el análisis fue intentado
+            if gpt_info and gpt_info.get("used"):
                 print_gpt_analysis_section(pillar_name, gpt_info)
             
             # OPCIONAL: Debug para ver qué pilares tienen análisis LLM
